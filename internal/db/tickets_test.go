@@ -104,10 +104,13 @@ func TestDeleteExpiredTickets(t *testing.T) {
 	ctx := context.Background()
 
 	_ = d.InsertTicket(ctx, "old", "alice", time.Minute)
+	fc.Advance(25 * time.Hour)
+	_ = d.InsertTicket(ctx, "recent", "bob", time.Minute)
 	fc.Advance(2 * time.Minute)
-	_ = d.InsertTicket(ctx, "new", "alice", time.Hour)
+	_ = d.InsertTicket(ctx, "new", "carol", time.Hour)
 
-	n, err := d.DeleteExpiredTickets(ctx)
+	// "old" expired >24h ago, "recent" expired ~2min ago, "new" still valid.
+	n, err := d.DeleteExpiredTickets(ctx, 24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

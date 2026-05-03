@@ -79,8 +79,12 @@ func (db *DB) ConsumeTicket(ctx context.Context, uuid string) (*Ticket, error) {
 	return db.GetTicket(ctx, uuid)
 }
 
-func (db *DB) DeleteExpiredTickets(ctx context.Context) (int64, error) {
-	res, err := db.ExecContext(ctx, `DELETE FROM tickets WHERE expires_at < ?`, db.nowUnix())
+// DeleteExpiredTickets deletes tickets whose expiry is older than retention ago.
+// Keeping recently-expired rows lets ConsumeTicket return ErrTicketExpired
+// instead of ErrTicketNotFound, so users get an accurate error message.
+func (db *DB) DeleteExpiredTickets(ctx context.Context, retention time.Duration) (int64, error) {
+	cutoff := db.clock.Now().Add(-retention).Unix()
+	res, err := db.ExecContext(ctx, `DELETE FROM tickets WHERE expires_at < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}

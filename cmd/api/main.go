@@ -55,7 +55,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if n, err := database.DeleteExpiredTickets(ctx); err != nil {
+				if n, err := database.DeleteExpiredTickets(ctx, cfg.TicketRetention); err != nil {
 					log.Error("ticket cleanup", "err", err)
 				} else if n > 0 {
 					log.Info("ticket cleanup", "deleted", n)

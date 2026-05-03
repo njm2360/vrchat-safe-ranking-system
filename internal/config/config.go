@@ -19,6 +19,7 @@ type Config struct {
 	HMACSaveSecret   []byte
 	HMACLoadSecret   []byte
 	TicketTTL        time.Duration
+	TicketRetention  time.Duration
 	ChallengeRateTTL time.Duration
 
 	BotToken     string
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 		HMACSaveSecret:   []byte(os.Getenv("HMAC_SAVE_SECRET")),
 		HMACLoadSecret:   []byte(os.Getenv("HMAC_LOAD_SECRET")),
 		TicketTTL:        getEnvDuration("TICKET_TTL", 5*time.Minute),
+		TicketRetention:  getEnvDuration("TICKET_RETENTION", 24*time.Hour),
 		ChallengeRateTTL: getEnvDuration("CHALLENGE_RATE_TTL", time.Minute),
 		BotToken:         os.Getenv("BOT_TOKEN"),
 		BotGuildID:       os.Getenv("BOT_GUILD_ID"),
