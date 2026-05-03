@@ -167,6 +167,19 @@ func TestRegister_UpsertError(t *testing.T) {
 	}
 }
 
+func TestRegister_DisplayNameTakenMapped(t *testing.T) {
+	store := &fakeStore{
+		consumeRet: &db.Ticket{DisplayName: "alice"},
+		getUserErr: db.ErrUserNotFound,
+		upsertErr:  db.ErrDisplayNameTaken,
+	}
+	svc := registration.New(store, &fakeIssuer{jwtVal: "j", jtiVal: "x"})
+	_, err := svc.Register(context.Background(), "d", "u")
+	if !errors.Is(err, registration.ErrDisplayNameTaken) {
+		t.Fatalf("err = %v, want ErrDisplayNameTaken", err)
+	}
+}
+
 func TestRegister_GetUserUnexpectedError(t *testing.T) {
 	store := &fakeStore{
 		consumeRet: &db.Ticket{DisplayName: "alice"},

@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-var ErrUserNotFound = errors.New("user not found")
+var (
+	ErrUserNotFound      = errors.New("user not found")
+	ErrDisplayNameTaken  = errors.New("display_name already bound to a different discord_id")
+)
 
 type User struct {
 	DiscordID   string
@@ -81,7 +84,7 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return err
 	}
 	if err == nil && existingDiscord != discordID {
-		return errors.New("display_name already bound to a different discord_id")
+		return ErrDisplayNameTaken
 	}
 
 	// Read existing current_jti for this discord_id (if any)
@@ -125,4 +128,29 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 	}
 
 	return tx.Commit()
+}
+
+// Unregister blacklists the user's current JWT so they drop out of /ranking
+// and can no longer /save. The users row is intentionally preserved so the
+// display_name binding stays reserved against hijack by a different
+// discord_id; the user can /register again later to mint a fresh token.
+// Returns ErrUserNotFound if the discord_id is not registered.
+func (db *DB) Unregister(ctx context.Context, discordID string) error {
+	var jti sql.NullString
+	err := db.QueryRowContext(ctx,
+		`SELECT current_jti FROM users WHERE discord_id = ?`, discordID).Scan(&jti)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !jti.Valid || jti.String == "" {
+		return nil
+	}
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
+		 ON CONFLICT(jti) DO NOTHING`,
+		jti.String, "self unregister", db.nowUnix())
+	return err
 }

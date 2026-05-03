@@ -44,10 +44,11 @@ type Result struct {
 
 // Errors returned by Register. Callers should compare with errors.Is.
 var (
-	ErrTicketNotFound = errors.New("ticket not found")
-	ErrTicketExpired  = errors.New("ticket expired")
-	ErrTicketUsed     = errors.New("ticket already used")
-	ErrBanned         = errors.New("discord_id is banned")
+	ErrTicketNotFound   = errors.New("ticket not found")
+	ErrTicketExpired    = errors.New("ticket expired")
+	ErrTicketUsed       = errors.New("ticket already used")
+	ErrBanned           = errors.New("discord_id is banned")
+	ErrDisplayNameTaken = errors.New("display_name already registered by another discord_id")
 )
 
 // Register consumes the ticket UUID and issues a JWT for (discordID,
@@ -92,6 +93,9 @@ func (s *Service) Register(ctx context.Context, discordID, ticketUUID string) (*
 	}
 
 	if err := s.store.UpsertUserAndIssue(ctx, discordID, ticket.DisplayName, jti, jwt, "renewed via /register"); err != nil {
+		if errors.Is(err, db.ErrDisplayNameTaken) {
+			return nil, ErrDisplayNameTaken
+		}
 		return nil, fmt.Errorf("upsert user: %w", err)
 	}
 

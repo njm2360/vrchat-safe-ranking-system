@@ -37,6 +37,10 @@ var commands = []*discordgo.ApplicationCommand{
 		Description: "現在のトークンを再表示します",
 	},
 	{
+		Name:        "unregister",
+		Description: "ランキングから自分を除外します",
+	},
+	{
 		Name:        "ban",
 		Description: "(管理者用) 指定ユーザーをランキングから除外します",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -130,6 +134,8 @@ func (b *bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 		b.handleRegister(s, i, data)
 	case "mytoken":
 		b.handleMyToken(s, i)
+	case "unregister":
+		b.handleUnregister(s, i)
 	case "ban":
 		b.handleBan(s, i, data)
 	case "unban":
@@ -194,6 +200,9 @@ func registrationErrorMessage(err error) string {
 		return "❌ チケットの有効期限が切れています。チケットを再発行してください。"
 	case errors.Is(err, registration.ErrTicketUsed):
 		return "❌ このチケットは既に使用済みです。チケットを再発行してください。"
+	case errors.Is(err, registration.ErrDisplayNameTaken):
+		return "❌ このユーザー名は既に他のDiscordアカウントで登録されています。\n" +
+			"心当たりがない場合は管理者にお問い合わせください。"
 	}
 	return fmt.Sprintf("❌ 登録に失敗しました: %v", err)
 }
@@ -244,6 +253,26 @@ func (b *bot) handleMyToken(s *discordgo.Session, i *discordgo.InteractionCreate
 		return
 	}
 	ephemeral(s, i, fmt.Sprintf("ユーザー名: `%s`\n\nあなたのトークン:\n```\n%s\n```", dn, jwt))
+}
+
+func (b *bot) handleUnregister(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	uid := userID(i)
+	if uid == "" {
+		ephemeral(s, i, "❌ Discord IDを取得できませんでした。")
+		return
+	}
+	if err := b.db.Unregister(context.Background(), uid); err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			ephemeral(s, i, "❌ 登録されていません。")
+			return
+		}
+		b.log.Error("unregister", "err", err)
+		ephemeral(s, i, "❌ 登録解除に失敗しました。")
+		return
+	}
+	ephemeral(s, i, "✅ ランキングから除外しました。\n"+
+		"VRChatユーザー名の予約は維持されるため、他人に名前を奪われることはありません。\n"+
+		"再度参加したい場合は `/register` で新しいトークンを発行できます。")
 }
 
 func (b *bot) handleBan(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {

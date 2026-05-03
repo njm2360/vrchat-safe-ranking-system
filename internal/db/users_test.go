@@ -62,8 +62,8 @@ func TestUpsertUserAndIssue_RejectsDisplayNameStolenByOtherDiscordID(t *testing.
 		t.Fatal(err)
 	}
 	err := d.UpsertUserAndIssue(ctx, "discord-2", "alice", "j2", "jwt2", "")
-	if err == nil {
-		t.Fatal("expected error when another discord_id grabs an existing display_name")
+	if !errors.Is(err, db.ErrDisplayNameTaken) {
+		t.Fatalf("err = %v, want ErrDisplayNameTaken", err)
 	}
 }
 
@@ -119,6 +119,35 @@ func TestUpsertUserAndIssue_ReissueWithoutRename(t *testing.T) {
 	}
 	if black, _ := d.IsJTIBlacklisted(ctx, "j1"); !black {
 		t.Error("old jti should be blacklisted on reissue")
+	}
+}
+
+func TestUnregister_BlacklistsCurrentJTI(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	if err := d.UpsertUserAndIssue(ctx, "d", "alice", "j1", "jwt1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Unregister(ctx, "d"); err != nil {
+		t.Fatalf("Unregister: %v", err)
+	}
+	if black, _ := d.IsJTIBlacklisted(ctx, "j1"); !black {
+		t.Error("current jti should be blacklisted after Unregister")
+	}
+	// users row preserved so the display_name stays reserved.
+	u, err := d.GetUserByDiscordID(ctx, "d")
+	if err != nil {
+		t.Fatalf("user row should still exist: %v", err)
+	}
+	if u.DisplayName != "alice" {
+		t.Errorf("DisplayName = %q, want alice", u.DisplayName)
+	}
+}
+
+func TestUnregister_NotRegistered(t *testing.T) {
+	d := newTestDB(t, nil)
+	if err := d.Unregister(context.Background(), "ghost"); !errors.Is(err, db.ErrUserNotFound) {
+		t.Errorf("err = %v, want ErrUserNotFound", err)
 	}
 }
 
