@@ -41,6 +41,22 @@ var commands = []*discordgo.ApplicationCommand{
 		Description: "ランキングから自分を除外します",
 	},
 	{
+		Name:        "whois",
+		Description: "(管理者用) ユーザー名またはDiscordユーザーから登録情報を引きます",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "name", Description: "VRChatのユーザー名"},
+			{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: "Discordユーザー"},
+		},
+	},
+	{
+		Name:        "release-name",
+		Description: "(管理者用) 不正に取得されたVRChatユーザー名を解放します",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "name", Description: "解放するVRChatユーザー名", Required: true},
+			{Type: discordgo.ApplicationCommandOptionString, Name: "reason", Description: "理由 (任意)"},
+		},
+	},
+	{
 		Name:        "ban",
 		Description: "(管理者用) 指定ユーザーをランキングから除外します",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -136,6 +152,10 @@ func (b *bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 		b.handleMyToken(s, i)
 	case "unregister":
 		b.handleUnregister(s, i)
+	case "whois":
+		b.handleWhois(s, i, data)
+	case "release-name":
+		b.handleReleaseName(s, i, data)
 	case "ban":
 		b.handleBan(s, i, data)
 	case "unban":
@@ -273,6 +293,110 @@ func (b *bot) handleUnregister(s *discordgo.Session, i *discordgo.InteractionCre
 	ephemeral(s, i, "✅ ランキングから除外しました。\n"+
 		"VRChatユーザー名の予約は維持されるため、他人に名前を奪われることはありません。\n"+
 		"再度参加したい場合は `/register` で新しいトークンを発行できます。")
+}
+
+func (b *bot) handleWhois(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	if !b.cfg.IsAdmin(userID(i)) {
+		ephemeral(s, i, "❌ このコマンドは管理者専用です。")
+		return
+	}
+	name := optString(data.Options, "name")
+	uid := optUserID(data.Options, "user")
+	if name == "" && uid == "" {
+		ephemeral(s, i, "❌ `name` または `user` のいずれかを指定してください。")
+		return
+	}
+	if name != "" && uid != "" {
+		ephemeral(s, i, "❌ `name` と `user` は同時に指定できません。")
+		return
+	}
+
+	ctx := context.Background()
+	var user *db.User
+	var err error
+	if name != "" {
+		user, err = b.db.GetUserByDisplayName(ctx, name)
+	} else {
+		user, err = b.db.GetUserByDiscordID(ctx, uid)
+	}
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			ephemeral(s, i, "🔍 該当する登録は見つかりませんでした。")
+			return
+		}
+		b.log.Error("whois lookup", "err", err)
+		ephemeral(s, i, "❌ 検索に失敗しました。")
+		return
+	}
+
+	banned, err := b.db.IsBanned(ctx, user.DiscordID)
+	if err != nil {
+		b.log.Error("whois ban check", "err", err)
+		banned = false
+	}
+	jtiActive := "なし"
+	if user.CurrentJTI != "" {
+		blacklisted, err := b.db.IsJTIBlacklisted(ctx, user.CurrentJTI)
+		if err != nil {
+			b.log.Error("whois jti check", "err", err)
+		}
+		if blacklisted {
+			jtiActive = fmt.Sprintf("`%s` (無効化済み — `/unregister` または管理操作によるもの)", user.CurrentJTI)
+		} else {
+			jtiActive = fmt.Sprintf("`%s` (有効)", user.CurrentJTI)
+		}
+	}
+	banLine := "なし"
+	if banned {
+		banLine = "**BAN中**"
+	}
+
+	ephemeral(s, i, fmt.Sprintf(
+		"🔍 登録情報\n"+
+			"- Discord: <@%s> (`%s`)\n"+
+			"- VRChatユーザー名: `%s`\n"+
+			"- 登録日時: <t:%d:f>\n"+
+			"- 最終更新: <t:%d:f>\n"+
+			"- 現在のJTI: %s\n"+
+			"- BAN: %s",
+		user.DiscordID, user.DiscordID,
+		user.DisplayName,
+		user.CreatedAt.Unix(),
+		user.UpdatedAt.Unix(),
+		jtiActive,
+		banLine,
+	))
+}
+
+func (b *bot) handleReleaseName(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	if !b.cfg.IsAdmin(userID(i)) {
+		ephemeral(s, i, "❌ このコマンドは管理者専用です。")
+		return
+	}
+	name := optString(data.Options, "name")
+	if name == "" {
+		ephemeral(s, i, "❌ `name` を指定してください。")
+		return
+	}
+	reason := optString(data.Options, "reason")
+	if reason == "" {
+		reason = "admin release"
+	}
+	prior, err := b.db.ReleaseDisplayName(context.Background(), name, reason)
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			ephemeral(s, i, "❌ そのユーザー名は登録されていません。")
+			return
+		}
+		b.log.Error("release name", "err", err)
+		ephemeral(s, i, "❌ 解放に失敗しました。")
+		return
+	}
+	ephemeral(s, i, fmt.Sprintf(
+		"✅ ユーザー名 `%s` を解放しました。\n"+
+			"- 旧保有者: <@%s> (`%s`)\n"+
+			"- 旧トークンは無効化されました",
+		name, prior, prior))
 }
 
 func (b *bot) handleBan(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {

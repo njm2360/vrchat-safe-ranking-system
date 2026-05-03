@@ -130,6 +130,43 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 	return tx.Commit()
 }
 
+// ReleaseDisplayName forcibly releases a display_name binding (admin action,
+// typically used when the name was hijacked before the legitimate VRChat owner
+// could /register). It blacklists the holder's current JWT (so any saves they
+// made drop out of /ranking) and deletes the users row so the legitimate owner
+// can /register. Returns the discord_id that previously held the name, or
+// ErrUserNotFound if no binding exists.
+func (db *DB) ReleaseDisplayName(ctx context.Context, displayName, reason string) (priorDiscordID string, err error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	var jti sql.NullString
+	err = tx.QueryRowContext(ctx,
+		`SELECT discord_id, current_jti FROM users WHERE display_name = ?`, displayName).Scan(&priorDiscordID, &jti)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrUserNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if jti.Valid && jti.String != "" {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
+			 ON CONFLICT(jti) DO NOTHING`,
+			jti.String, reason, db.nowUnix()); err != nil {
+			return "", err
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM users WHERE display_name = ?`, displayName); err != nil {
+		return "", err
+	}
+	return priorDiscordID, tx.Commit()
+}
+
 // Unregister blacklists the user's current JWT so they drop out of /ranking
 // and can no longer /save. The users row is intentionally preserved so the
 // display_name binding stays reserved against hijack by a different

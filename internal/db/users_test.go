@@ -151,6 +151,35 @@ func TestUnregister_NotRegistered(t *testing.T) {
 	}
 }
 
+func TestReleaseDisplayName(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	if err := d.UpsertUserAndIssue(ctx, "attacker", "victim_name", "j_atk", "jwt", ""); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := d.ReleaseDisplayName(ctx, "victim_name", "hijack")
+	if err != nil {
+		t.Fatalf("ReleaseDisplayName: %v", err)
+	}
+	if prior != "attacker" {
+		t.Errorf("prior = %q, want attacker", prior)
+	}
+	if black, _ := d.IsJTIBlacklisted(ctx, "j_atk"); !black {
+		t.Error("attacker jti should be blacklisted")
+	}
+	// users row gone — legitimate owner can now register the name.
+	if err := d.UpsertUserAndIssue(ctx, "victim", "victim_name", "j_vic", "jwt2", ""); err != nil {
+		t.Fatalf("legitimate registration after release should succeed: %v", err)
+	}
+}
+
+func TestReleaseDisplayName_NotFound(t *testing.T) {
+	d := newTestDB(t, nil)
+	if _, err := d.ReleaseDisplayName(context.Background(), "ghost", "x"); !errors.Is(err, db.ErrUserNotFound) {
+		t.Errorf("err = %v, want ErrUserNotFound", err)
+	}
+}
+
 func TestGetUserByDiscordIDNotFound(t *testing.T) {
 	d := newTestDB(t, nil)
 	if _, err := d.GetUserByDiscordID(context.Background(), "missing"); !errors.Is(err, db.ErrUserNotFound) {
