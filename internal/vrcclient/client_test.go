@@ -28,37 +28,37 @@ func TestChallengeURLFormat(t *testing.T) {
 
 func TestSaveURLIncludesValidHMAC(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u := c.SaveURL(vrcclient.SaveParams{UserID: "alice", Score: 1234, JWT: "tok"})
+	u := c.SaveURL(vrcclient.SaveParams{Score: 1234, JWT: "tok"})
 
 	parsed, err := url.Parse(u)
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := parsed.Query()
-	if q.Get("user_id") != "alice" || q.Get("score") != "1234" || q.Get("jwt") != "tok" {
+	if q.Get("score") != "1234" || q.Get("jwt") != "tok" {
 		t.Errorf("params = %v", q)
 	}
-	if !auth.VerifyHex([]byte(saveSecret), auth.SaveSigMessage("alice", 1234), q.Get("sig")) {
+	if _, ok := q["user_id"]; ok {
+		t.Error("user_id must not appear in save URL")
+	}
+	if !auth.VerifyHex([]byte(saveSecret), auth.SaveSigMessage(1234), q.Get("sig")) {
 		t.Error("sig does not verify against save secret")
 	}
 }
 
-func TestSaveURLOmitsJWTWhenEmpty(t *testing.T) {
+func TestLoadURLContainsJWTAndNoSig(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u := c.SaveURL(vrcclient.SaveParams{UserID: "alice", Score: 1})
-	parsed, _ := url.Parse(u)
-	if _, ok := parsed.Query()["jwt"]; ok {
-		t.Error("jwt param should not be present when empty")
-	}
-}
-
-func TestLoadURLIncludesValidHMAC(t *testing.T) {
-	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u := c.LoadURL(vrcclient.LoadParams{UserID: "alice"})
+	u := c.LoadURL(vrcclient.LoadParams{JWT: "my.jwt.token"})
 	parsed, _ := url.Parse(u)
 	q := parsed.Query()
-	if !auth.VerifyHex([]byte(loadSecret), auth.LoadSigMessage("alice"), q.Get("sig")) {
-		t.Error("sig does not verify against load secret")
+	if q.Get("jwt") != "my.jwt.token" {
+		t.Errorf("jwt param = %q, want 'my.jwt.token'", q.Get("jwt"))
+	}
+	if _, ok := q["sig"]; ok {
+		t.Error("sig must not appear in load URL")
+	}
+	if _, ok := q["user_id"]; ok {
+		t.Error("user_id must not appear in load URL")
 	}
 }
 
@@ -85,7 +85,7 @@ func TestSaveAgainstFakeServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		score, _ := strconv.ParseInt(q.Get("score"), 10, 64)
-		if !auth.VerifyHex([]byte(saveSecret), auth.SaveSigMessage(q.Get("user_id"), score), q.Get("sig")) {
+		if !auth.VerifyHex([]byte(saveSecret), auth.SaveSigMessage(score), q.Get("sig")) {
 			http.Error(w, "bad sig", http.StatusUnauthorized)
 			return
 		}
@@ -94,7 +94,7 @@ func TestSaveAgainstFakeServer(t *testing.T) {
 	defer srv.Close()
 
 	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
-	body, err := c.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 1234, JWT: "tok"})
+	body, err := c.Save(context.Background(), vrcclient.SaveParams{Score: 1234, JWT: "tok"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestSaveReturnsErrorOn5xx(t *testing.T) {
 	defer srv.Close()
 
 	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
-	if _, err := c.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 1}); err == nil {
+	if _, err := c.Save(context.Background(), vrcclient.SaveParams{Score: 1, JWT: "tok"}); err == nil {
 		t.Fatal("expected error on 5xx")
 	}
 }
@@ -122,7 +122,7 @@ func TestSaveReturnsErrorOn401(t *testing.T) {
 	defer srv.Close()
 
 	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
-	if _, err := c.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 1}); err == nil {
+	if _, err := c.Save(context.Background(), vrcclient.SaveParams{Score: 1, JWT: "tok"}); err == nil {
 		t.Fatal("expected error on 401")
 	}
 }
@@ -154,11 +154,44 @@ func TestLoadReturnsEmptyOn404(t *testing.T) {
 	defer srv.Close()
 
 	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
-	got, err := c.Load(context.Background(), vrcclient.LoadParams{UserID: "alice"})
+	got, err := c.Load(context.Background(), vrcclient.LoadParams{JWT: "my.jwt"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "" {
 		t.Errorf("expected empty string for 404, got %q", got)
+	}
+}
+
+func TestLoadAgainstFakeServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		sig := auth.SignHex([]byte(loadSecret), auth.LoadSigMessage(9999))
+		w.Write([]byte(`{"score":9999,"sig":"` + sig + `"}`))
+	}))
+	defer srv.Close()
+
+	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
+	got, err := c.Load(context.Background(), vrcclient.LoadParams{JWT: "tok"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got != "9999" {
+		t.Errorf("score = %q, want '9999'", got)
+	}
+}
+
+func TestLoadRejectsInvalidSig(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// MITM: returns a tampered score with the original sig (score mismatch)
+		w.Header().Set("Content-Type", "application/json")
+		legitimateSig := auth.SignHex([]byte(loadSecret), auth.LoadSigMessage(100))
+		w.Write([]byte(`{"score":99999,"sig":"` + legitimateSig + `"}`))
+	}))
+	defer srv.Close()
+
+	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
+	if _, err := c.Load(context.Background(), vrcclient.LoadParams{JWT: "tok"}); err == nil {
+		t.Fatal("expected error for tampered response, got nil")
 	}
 }

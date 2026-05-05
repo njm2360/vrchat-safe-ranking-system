@@ -2,8 +2,8 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
@@ -11,23 +11,7 @@ import (
 )
 
 func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	userID := strings.TrimSpace(q.Get("user_id"))
-	jwtStr := strings.TrimSpace(q.Get("jwt"))
-	sigHex := strings.TrimSpace(q.Get("sig"))
-
-	if !validDisplayName(userID) {
-		writePlain(w, http.StatusBadRequest, "invalid user_id")
-		return
-	}
-	if sigHex == "" {
-		writePlain(w, http.StatusBadRequest, "missing sig")
-		return
-	}
-	if !auth.VerifyHex(s.cfg.HMACLoadSecret, auth.LoadSigMessage(userID), sigHex) {
-		writePlain(w, http.StatusUnauthorized, "invalid sig")
-		return
-	}
+	jwtStr := strings.TrimSpace(r.URL.Query().Get("jwt"))
 
 	if jwtStr == "" {
 		writePlain(w, http.StatusUnauthorized, "missing jwt")
@@ -38,12 +22,8 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		writePlain(w, http.StatusUnauthorized, "jwt invalid")
 		return
 	}
-	if claims.DisplayName != userID {
-		writePlain(w, http.StatusUnauthorized, "jwt name mismatch")
-		return
-	}
 
-	entry, err := s.saves.GetLatestSave(r.Context(), userID)
+	entry, err := s.saves.GetLatestSave(r.Context(), claims.DisplayName)
 	if err != nil {
 		if errors.Is(err, db.ErrSaveNotFound) {
 			writePlain(w, http.StatusNotFound, "")
@@ -53,5 +33,7 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		writePlain(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writePlain(w, http.StatusOK, strconv.FormatInt(entry.Score, 10))
+
+	sig := auth.SignHex(s.cfg.HMACLoadSecret, auth.LoadSigMessage(entry.Score))
+	writeJSON(w, http.StatusOK, fmt.Sprintf(`{"score":%d,"sig":%q}`, entry.Score, sig))
 }

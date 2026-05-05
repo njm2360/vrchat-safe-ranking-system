@@ -91,17 +91,16 @@ func runChallenge(ctx context.Context, client *vrcclient.Client, args []string) 
 
 func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("save", flag.ExitOnError)
-	name := fs.String("name", "", "DisplayName (= user_id)")
 	score := fs.Int64("score", 0, "score (int)")
-	jwt := fs.String("jwt", "", "JWT (optional). Prefix with @ to read from file.")
+	jwt := fs.String("jwt", "", "JWT. Prefix with @ to read from file.")
 	printURL := fs.Bool("print-url", false, "print URL only, do not request")
 	_ = fs.Parse(args)
-	if *name == "" {
-		exitIf(fmt.Errorf("--name required"))
+	if *jwt == "" {
+		exitIf(fmt.Errorf("--jwt required"))
 	}
 	jwtStr, err := readMaybeFile(*jwt)
 	exitIf(err)
-	p := vrcclient.SaveParams{UserID: *name, Score: *score, JWT: jwtStr}
+	p := vrcclient.SaveParams{Score: *score, JWT: jwtStr}
 	if *printURL {
 		fmt.Println(client.SaveURL(p))
 		return
@@ -113,17 +112,19 @@ func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 
 func runLoad(ctx context.Context, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("load", flag.ExitOnError)
-	name := fs.String("name", "", "DisplayName")
+	jwt := fs.String("jwt", "", "JWT. Prefix with @ to read from file.")
 	printURL := fs.Bool("print-url", false, "print URL only, do not request")
 	_ = fs.Parse(args)
-	if *name == "" {
-		exitIf(fmt.Errorf("--name required"))
+	if *jwt == "" {
+		exitIf(fmt.Errorf("--jwt required"))
 	}
+	jwtStr, err := readMaybeFile(*jwt)
+	exitIf(err)
 	if *printURL {
-		fmt.Println(client.LoadURL(vrcclient.LoadParams{UserID: *name}))
+		fmt.Println(client.LoadURL(vrcclient.LoadParams{JWT: jwtStr}))
 		return
 	}
-	v, err := client.Load(ctx, vrcclient.LoadParams{UserID: *name})
+	v, err := client.Load(ctx, vrcclient.LoadParams{JWT: jwtStr})
 	exitIf(err)
 	if v == "" {
 		fmt.Fprintln(os.Stderr, "(no save)")
@@ -161,12 +162,12 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	fmt.Println("   JWT:", res.JWT)
 
 	fmt.Println("=> save (with JWT)")
-	body, err := client.Save(ctx, vrcclient.SaveParams{UserID: *name, Score: *score, JWT: res.JWT})
+	body, err := client.Save(ctx, vrcclient.SaveParams{Score: *score, JWT: res.JWT})
 	exitIf(err)
 	fmt.Println("   ", body)
 
 	fmt.Println("=> load")
-	loaded, err := client.Load(ctx, vrcclient.LoadParams{UserID: *name, JWT: res.JWT})
+	loaded, err := client.Load(ctx, vrcclient.LoadParams{JWT: res.JWT})
 	exitIf(err)
 	fmt.Println("   score =", loaded)
 

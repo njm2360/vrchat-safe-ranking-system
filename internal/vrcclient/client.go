@@ -6,6 +6,7 @@ package vrcclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,24 +51,15 @@ func (c *Client) RequestChallenge(ctx context.Context, displayName string) (stri
 }
 
 type SaveParams struct {
-	UserID string
-	Score  int64
-	JWT    string
-}
-
-type LoadParams struct {
-	UserID string
-	JWT    string
+	Score int64
+	JWT   string
 }
 
 func (c *Client) SaveURL(p SaveParams) string {
-	sig := auth.SignHex(c.SaveSecret, auth.SaveSigMessage(p.UserID, p.Score))
+	sig := auth.SignHex(c.SaveSecret, auth.SaveSigMessage(p.Score))
 	q := url.Values{}
-	q.Set("user_id", p.UserID)
 	q.Set("score", strconv.FormatInt(p.Score, 10))
-	if p.JWT != "" {
-		q.Set("jwt", p.JWT)
-	}
+	q.Set("jwt", p.JWT)
 	q.Set("sig", sig)
 	return c.BaseURL + "/save?" + q.Encode()
 }
@@ -83,14 +75,13 @@ func (c *Client) Save(ctx context.Context, p SaveParams) (string, error) {
 	return strings.TrimSpace(body), nil
 }
 
+type LoadParams struct {
+	JWT string
+}
+
 func (c *Client) LoadURL(p LoadParams) string {
-	sig := auth.SignHex(c.LoadSecret, auth.LoadSigMessage(p.UserID))
 	q := url.Values{}
-	q.Set("user_id", p.UserID)
-	if p.JWT != "" {
-		q.Set("jwt", p.JWT)
-	}
-	q.Set("sig", sig)
+	q.Set("jwt", p.JWT)
 	return c.BaseURL + "/load?" + q.Encode()
 }
 
@@ -106,7 +97,18 @@ func (c *Client) Load(ctx context.Context, p LoadParams) (string, error) {
 	if status != http.StatusOK {
 		return "", fmt.Errorf("load: status %d: %s", status, body)
 	}
-	return strings.TrimSpace(body), nil
+
+	var resp struct {
+		Score int64  `json:"score"`
+		Sig   string `json:"sig"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return "", fmt.Errorf("load: invalid response: %w", err)
+	}
+	if !auth.VerifyHex(c.LoadSecret, auth.LoadSigMessage(resp.Score), resp.Sig) {
+		return "", fmt.Errorf("load: response sig invalid (MITM?)")
+	}
+	return strconv.FormatInt(resp.Score, 10), nil
 }
 
 func (c *Client) get(ctx context.Context, u string) (string, int, error) {

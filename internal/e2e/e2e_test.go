@@ -97,7 +97,7 @@ func TestE2E_HappyPath(t *testing.T) {
 	h := newHarness(t)
 	jwt := h.register("discord-1", "alice")
 
-	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 1234, JWT: jwt})
+	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{Score: 1234, JWT: jwt})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestE2E_HappyPath(t *testing.T) {
 		t.Errorf("save body = %q, want 'OK ranked'", body)
 	}
 
-	loaded, err := h.client.Load(context.Background(), vrcclient.LoadParams{UserID: "alice", JWT: jwt})
+	loaded, err := h.client.Load(context.Background(), vrcclient.LoadParams{JWT: jwt})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -123,13 +123,13 @@ func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 	h := newHarness(t)
 
 	jwt1 := h.register("discord-1", "alice")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 100, JWT: jwt1})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Score: 100, JWT: jwt1})
 
 	// Rate limit on challenge — advance fake clock past the 100ms window.
 	h.clock.Advance(time.Second)
 
 	jwt2 := h.register("discord-1", "alice2")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "alice2", Score: 999, JWT: jwt2})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Score: 999, JWT: jwt2})
 
 	rows, _ := h.db.Ranking(context.Background(), 10)
 	if len(rows) != 1 {
@@ -143,7 +143,7 @@ func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 func TestE2E_BanHidesUserFromRanking(t *testing.T) {
 	h := newHarness(t)
 	jwt := h.register("discord-1", "alice")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "alice", Score: 1234, JWT: jwt})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Score: 1234, JWT: jwt})
 
 	if err := h.db.Ban(context.Background(), "discord-1", "test"); err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestE2E_BannedUserCannotRegister(t *testing.T) {
 func TestE2E_SaveWithoutJWT_Rejected(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "anon", Score: 9999})
+	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{Score: 9999})
 	if err == nil {
 		t.Fatal("expected error for save without jwt, got nil")
 	}
@@ -192,7 +192,7 @@ func TestE2E_SaveWithoutJWT_Rejected(t *testing.T) {
 func TestE2E_LoadWithoutJWT_Rejected(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.client.Load(context.Background(), vrcclient.LoadParams{UserID: "anon"})
+	_, err := h.client.Load(context.Background(), vrcclient.LoadParams{})
 	if err == nil {
 		t.Fatal("expected error for load without jwt, got nil")
 	}

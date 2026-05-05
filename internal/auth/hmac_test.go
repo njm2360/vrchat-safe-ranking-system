@@ -38,15 +38,15 @@ func TestHMACVerifyRejectsTampering(t *testing.T) {
 }
 
 func TestSaveSigMessageFormat(t *testing.T) {
-	got := string(auth.SaveSigMessage("alice", 1234))
-	if got != "alice|1234" {
-		t.Errorf("SaveSigMessage = %q, want %q", got, "alice|1234")
+	got := string(auth.SaveSigMessage(1234))
+	if got != "1234" {
+		t.Errorf("SaveSigMessage = %q, want %q", got, "1234")
 	}
 }
 
 func TestLoadSigMessageFormat(t *testing.T) {
-	got := string(auth.LoadSigMessage("alice"))
-	if got != "alice" {
-		t.Errorf("LoadSigMessage = %q, want %q", got, "alice")
+	got := string(auth.LoadSigMessage(1234))
+	if got != "1234" {
+		t.Errorf("LoadSigMessage = %q, want %q", got, "1234")
 	}
 }
