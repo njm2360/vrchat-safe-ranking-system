@@ -60,7 +60,7 @@ Subcommands:
   load --name <DisplayName>
       Sign and send /load. Prints the score (empty for no save).
 
-  e2e --name <DisplayName> --discord-id <id> [--score <int>]
+  e2e --name <DisplayName> [--discord-id <id>] [--score <int>]
       Full happy-path flow with no Discord bot:
         challenge → register (DB direct) → save → load → ranking.`)
 }
@@ -136,11 +136,11 @@ func runLoad(ctx context.Context, client *vrcclient.Client, args []string) {
 func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("e2e", flag.ExitOnError)
 	name := fs.String("name", "", "DisplayName")
-	discordID := fs.String("discord-id", "", "Discord user ID")
+	discordID := fs.String("discord-id", "e2e-test-user", "Discord user ID (省略時は e2e-test-user)")
 	score := fs.Int64("score", 1234, "score to save")
 	_ = fs.Parse(args)
-	if *name == "" || *discordID == "" {
-		exitIf(fmt.Errorf("--name and --discord-id required"))
+	if *name == "" {
+		exitIf(fmt.Errorf("--name required"))
 	}
 
 	database, err := db.Open(cfg.DBPath)

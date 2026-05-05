@@ -29,14 +29,14 @@ const (
 )
 
 type harness struct {
-	t       *testing.T
-	clock   *clock.Fake
-	idgen   *idgen.Sequential
-	db      *db.DB
-	issuer  *auth.JWTIssuer
-	regSvc  *registration.Service
-	server  *httptest.Server
-	client  *vrcclient.Client
+	t      *testing.T
+	clock  *clock.Fake
+	idgen  *idgen.Sequential
+	db     *db.DB
+	issuer *auth.JWTIssuer
+	regSvc *registration.Service
+	server *httptest.Server
+	client *vrcclient.Client
 }
 
 func newHarness(t *testing.T) *harness {
@@ -101,8 +101,8 @@ func TestE2E_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if body != "OK ranked" {
-		t.Errorf("save body = %q, want 'OK ranked'", body)
+	if body != "success" {
+		t.Errorf("save body = %q, want 'success'", body)
 	}
 
 	loaded, err := h.client.Load(context.Background(), vrcclient.LoadParams{JWT: jwt})

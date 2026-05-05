@@ -52,5 +52,5 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		writePlain(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writePlain(w, http.StatusOK, "OK ranked")
+	writePlain(w, http.StatusOK, "success")
 }

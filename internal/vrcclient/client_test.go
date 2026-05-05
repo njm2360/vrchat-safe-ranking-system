@@ -89,7 +89,7 @@ func TestSaveAgainstFakeServer(t *testing.T) {
 			http.Error(w, "bad sig", http.StatusUnauthorized)
 			return
 		}
-		w.Write([]byte("OK ranked"))
+		w.Write([]byte("success"))
 	}))
 	defer srv.Close()
 
@@ -98,8 +98,8 @@ func TestSaveAgainstFakeServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(body, "OK") {
-		t.Errorf("body = %q", body)
+	if body != "success" {
+		t.Errorf("body = %q, want 'success'", body)
 	}
 }
 

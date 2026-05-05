@@ -30,8 +30,8 @@ func TestSave_Ranked(t *testing.T) {
 	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
 
 	rr, body := get(t, h, saveURL(1234, "any.jwt.value", ""))
-	if rr.Code != http.StatusOK || body != "OK ranked" {
-		t.Errorf("status=%d body=%q, want 200 'OK ranked'", rr.Code, body)
+	if rr.Code != http.StatusOK || body != "success" {
+		t.Errorf("status=%d body=%q, want 200 'success'", rr.Code, body)
 	}
 	if len(saves.saveCalls) != 1 || saves.saveCalls[0].JTI != "jti-1" || saves.saveCalls[0].DisplayName != "alice" {
 		t.Errorf("save call = %+v", saves.saveCalls)
