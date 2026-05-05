@@ -120,10 +120,10 @@ func runLoad(ctx context.Context, client *vrcclient.Client, args []string) {
 		exitIf(fmt.Errorf("--name required"))
 	}
 	if *printURL {
-		fmt.Println(client.LoadURL(*name))
+		fmt.Println(client.LoadURL(vrcclient.LoadParams{UserID: *name}))
 		return
 	}
-	v, err := client.Load(ctx, *name)
+	v, err := client.Load(ctx, vrcclient.LoadParams{UserID: *name})
 	exitIf(err)
 	if v == "" {
 		fmt.Fprintln(os.Stderr, "(no save)")
@@ -166,7 +166,7 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	fmt.Println("   ", body)
 
 	fmt.Println("=> load")
-	loaded, err := client.Load(ctx, *name)
+	loaded, err := client.Load(ctx, vrcclient.LoadParams{UserID: *name, JWT: res.JWT})
 	exitIf(err)
 	fmt.Println("   score =", loaded)
 

@@ -39,13 +39,15 @@ func (f *fakeTicketStore) UpsertChallengeRate(_ context.Context, _ string) error
 
 // fakeSaveStore implements api.SaveStore.
 type fakeSaveStore struct {
-	saveCalls    []saveCall
-	saveErr      error
-	saveID       int64
-	latestRet    *db.SaveEntry
-	latestErr    error
-	rankingRet   []db.RankingRow
-	rankingErr   error
+	saveCalls       []saveCall
+	saveErr         error
+	saveID          int64
+	latestRet       *db.SaveEntry
+	latestErr       error
+	rankingRet      []db.RankingRow
+	rankingErr      error
+	jtiBlacklisted  bool
+	jtiBlacklistErr error
 }
 
 type saveCall struct {
@@ -63,6 +65,9 @@ func (f *fakeSaveStore) GetLatestSave(_ context.Context, _ string) (*db.SaveEntr
 }
 func (f *fakeSaveStore) Ranking(_ context.Context, _ int) ([]db.RankingRow, error) {
 	return f.rankingRet, f.rankingErr
+}
+func (f *fakeSaveStore) IsJTIBlacklisted(_ context.Context, _ string) (bool, error) {
+	return f.jtiBlacklisted, f.jtiBlacklistErr
 }
 
 // fakeJWT implements api.JWTVerifier.

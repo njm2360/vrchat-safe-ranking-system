@@ -25,20 +25,7 @@ func saveURL(name string, score int64, jwt, sigOverride string) string {
 	return "/save?" + q.Encode()
 }
 
-func TestSave_LocalOnly_NoJWT(t *testing.T) {
-	saves := &fakeSaveStore{saveID: 1}
-	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
-
-	rr, body := get(t, h, saveURL("alice", 100, "", ""))
-	if rr.Code != http.StatusOK || body != "OK saved" {
-		t.Errorf("status=%d body=%q, want 200 'OK saved'", rr.Code, body)
-	}
-	if len(saves.saveCalls) != 1 || saves.saveCalls[0].JTI != "" {
-		t.Errorf("save call = %+v", saves.saveCalls)
-	}
-}
-
-func TestSave_RankedWithValidJWT(t *testing.T) {
+func TestSave_Ranked(t *testing.T) {
 	saves := &fakeSaveStore{saveID: 1}
 	jwt := &fakeJWT{claims: &auth.Claims{DiscordID: "d", DisplayName: "alice", JTI: "jti-1"}}
 	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
@@ -52,28 +39,58 @@ func TestSave_RankedWithValidJWT(t *testing.T) {
 	}
 }
 
-func TestSave_JWTNameMismatch_SavedNotRanked(t *testing.T) {
+func TestSave_MissingJWT_Rejected(t *testing.T) {
 	saves := &fakeSaveStore{}
-	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "bob", JTI: "j"}}
-	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
+	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
 
-	rr, body := get(t, h, saveURL("alice", 1, "tok", ""))
-	if rr.Code != http.StatusOK || body != "OK saved (jwt name mismatch)" {
-		t.Errorf("status=%d body=%q", rr.Code, body)
+	rr, _ := get(t, h, saveURL("alice", 100, "", ""))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
 	}
-	if saves.saveCalls[0].JTI != "" {
-		t.Errorf("expected jti empty on mismatch, got %q", saves.saveCalls[0].JTI)
+	if len(saves.saveCalls) != 0 {
+		t.Error("Save should not be called when jwt is missing")
 	}
 }
 
-func TestSave_InvalidJWT_SavedNotRanked(t *testing.T) {
+func TestSave_InvalidJWT_Rejected(t *testing.T) {
 	saves := &fakeSaveStore{}
 	jwt := &fakeJWT{err: errors.New("bad")}
 	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
 
-	rr, body := get(t, h, saveURL("alice", 1, "tok", ""))
-	if rr.Code != http.StatusOK || body != "OK saved (jwt invalid)" {
-		t.Errorf("status=%d body=%q", rr.Code, body)
+	rr, _ := get(t, h, saveURL("alice", 1, "tok", ""))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
+	}
+	if len(saves.saveCalls) != 0 {
+		t.Error("Save should not be called when jwt is invalid")
+	}
+}
+
+func TestSave_JWTNameMismatch_Rejected(t *testing.T) {
+	saves := &fakeSaveStore{}
+	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "bob", JTI: "j"}}
+	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
+
+	rr, _ := get(t, h, saveURL("alice", 1, "tok", ""))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
+	}
+	if len(saves.saveCalls) != 0 {
+		t.Error("Save should not be called on name mismatch")
+	}
+}
+
+func TestSave_BlacklistedJWT_Rejected(t *testing.T) {
+	saves := &fakeSaveStore{jtiBlacklisted: true}
+	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "jti-revoked"}}
+	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
+
+	rr, body := get(t, h, saveURL("alice", 100, "any.jwt.value", ""))
+	if rr.Code != http.StatusUnauthorized || body != "jwt revoked" {
+		t.Errorf("status=%d body=%q, want 401 'jwt revoked'", rr.Code, body)
+	}
+	if len(saves.saveCalls) != 0 {
+		t.Error("Save should not be called when jti is blacklisted")
 	}
 }
 

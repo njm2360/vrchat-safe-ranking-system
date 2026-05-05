@@ -27,6 +27,7 @@ type SaveStore interface {
 	Save(ctx context.Context, displayName string, score int64, jti string) (historyID int64, err error)
 	GetLatestSave(ctx context.Context, displayName string) (*db.SaveEntry, error)
 	Ranking(ctx context.Context, limit int) ([]db.RankingRow, error)
+	IsJTIBlacklisted(ctx context.Context, jti string) (bool, error)
 }
 
 // JWTVerifier verifies a JWT and returns its claims.

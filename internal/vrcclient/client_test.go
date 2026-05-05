@@ -54,7 +54,7 @@ func TestSaveURLOmitsJWTWhenEmpty(t *testing.T) {
 
 func TestLoadURLIncludesValidHMAC(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u := c.LoadURL("alice")
+	u := c.LoadURL(vrcclient.LoadParams{UserID: "alice"})
 	parsed, _ := url.Parse(u)
 	q := parsed.Query()
 	if !auth.VerifyHex([]byte(loadSecret), auth.LoadSigMessage("alice"), q.Get("sig")) {
@@ -154,7 +154,7 @@ func TestLoadReturnsEmptyOn404(t *testing.T) {
 	defer srv.Close()
 
 	c := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
-	got, err := c.Load(context.Background(), "alice")
+	got, err := c.Load(context.Background(), vrcclient.LoadParams{UserID: "alice"})
 	if err != nil {
 		t.Fatal(err)
 	}

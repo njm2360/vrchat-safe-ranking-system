@@ -13,6 +13,7 @@ import (
 func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	userID := strings.TrimSpace(q.Get("user_id"))
+	jwtStr := strings.TrimSpace(q.Get("jwt"))
 	sigHex := strings.TrimSpace(q.Get("sig"))
 
 	if !validDisplayName(userID) {
@@ -25,6 +26,20 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	if !auth.VerifyHex(s.cfg.HMACLoadSecret, auth.LoadSigMessage(userID), sigHex) {
 		writePlain(w, http.StatusUnauthorized, "invalid sig")
+		return
+	}
+
+	if jwtStr == "" {
+		writePlain(w, http.StatusUnauthorized, "missing jwt")
+		return
+	}
+	claims, err := s.jwt.Verify(jwtStr)
+	if err != nil {
+		writePlain(w, http.StatusUnauthorized, "jwt invalid")
+		return
+	}
+	if claims.DisplayName != userID {
+		writePlain(w, http.StatusUnauthorized, "jwt name mismatch")
 		return
 	}
 

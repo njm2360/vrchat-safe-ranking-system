@@ -33,27 +33,34 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Anything short of a fully-valid JWT is recorded but excluded from the
-	// ranking by leaving jti empty. Banned users and revoked jtis still get
-	// to save — they just stay out of the ranking via the Ranking query.
-	var jti, status = "", "OK saved"
-	if jwtStr != "" {
-		claims, err := s.jwt.Verify(jwtStr)
-		switch {
-		case err != nil:
-			status = "OK saved (jwt invalid)"
-		case claims.DisplayName != userID:
-			status = "OK saved (jwt name mismatch)"
-		default:
-			jti = claims.JTI
-			status = "OK ranked"
-		}
+	if jwtStr == "" {
+		writePlain(w, http.StatusUnauthorized, "missing jwt")
+		return
+	}
+	claims, err := s.jwt.Verify(jwtStr)
+	if err != nil {
+		writePlain(w, http.StatusUnauthorized, "jwt invalid")
+		return
+	}
+	if claims.DisplayName != userID {
+		writePlain(w, http.StatusUnauthorized, "jwt name mismatch")
+		return
+	}
+	blacklisted, err := s.saves.IsJTIBlacklisted(r.Context(), claims.JTI)
+	if err != nil {
+		s.log.Error("jti blacklist check", "err", err)
+		writePlain(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if blacklisted {
+		writePlain(w, http.StatusUnauthorized, "jwt revoked")
+		return
 	}
 
-	if _, err := s.saves.Save(r.Context(), userID, score, jti); err != nil {
+	if _, err := s.saves.Save(r.Context(), userID, score, claims.JTI); err != nil {
 		s.log.Error("save", "err", err)
 		writePlain(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writePlain(w, http.StatusOK, status)
+	writePlain(w, http.StatusOK, "OK ranked")
 }

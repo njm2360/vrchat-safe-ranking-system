@@ -105,7 +105,7 @@ func TestE2E_HappyPath(t *testing.T) {
 		t.Errorf("save body = %q, want 'OK ranked'", body)
 	}
 
-	loaded, err := h.client.Load(context.Background(), "alice")
+	loaded, err := h.client.Load(context.Background(), vrcclient.LoadParams{UserID: "alice", JWT: jwt})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -180,25 +180,21 @@ func TestE2E_BannedUserCannotRegister(t *testing.T) {
 	}
 }
 
-func TestE2E_NoJWTSaveExcludedFromRanking(t *testing.T) {
+func TestE2E_SaveWithoutJWT_Rejected(t *testing.T) {
 	h := newHarness(t)
 
-	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "anon", Score: 9999})
-	if err != nil {
-		t.Fatalf("Save: %v", err)
+	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{UserID: "anon", Score: 9999})
+	if err == nil {
+		t.Fatal("expected error for save without jwt, got nil")
 	}
-	if body != "OK saved" {
-		t.Errorf("body = %q", body)
-	}
+}
 
-	rows, _ := h.db.Ranking(context.Background(), 10)
-	if len(rows) != 0 {
-		t.Errorf("expected empty ranking, got %+v", rows)
-	}
+func TestE2E_LoadWithoutJWT_Rejected(t *testing.T) {
+	h := newHarness(t)
 
-	loaded, _ := h.client.Load(context.Background(), "anon")
-	if loaded != "9999" {
-		t.Errorf("loaded = %q, want '9999'", loaded)
+	_, err := h.client.Load(context.Background(), vrcclient.LoadParams{UserID: "anon"})
+	if err == nil {
+		t.Fatal("expected error for load without jwt, got nil")
 	}
 }
 

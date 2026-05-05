@@ -30,8 +30,9 @@ func TestChallenge_DBErrorOnInsert(t *testing.T) {
 
 func TestSave_DBError(t *testing.T) {
 	saves := &fakeSaveStore{saveErr: errBoom}
-	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
-	rr, _ := get(t, h, saveURL("alice", 1, "", ""))
+	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
+	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
+	rr, _ := get(t, h, saveURL("alice", 1, "any.jwt.value", ""))
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rr.Code)
 	}
@@ -39,8 +40,9 @@ func TestSave_DBError(t *testing.T) {
 
 func TestLoad_DBError(t *testing.T) {
 	saves := &fakeSaveStore{latestErr: errBoom}
-	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
-	rr, _ := get(t, h, loadURL("alice", ""))
+	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
+	h := newServer(&fakeTicketStore{}, saves, jwt, fakeIDGen{})
+	rr, _ := get(t, h, loadURL("alice", "any.jwt.value", ""))
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rr.Code)
 	}

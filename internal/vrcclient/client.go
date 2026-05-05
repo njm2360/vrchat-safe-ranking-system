@@ -52,7 +52,12 @@ func (c *Client) RequestChallenge(ctx context.Context, displayName string) (stri
 type SaveParams struct {
 	UserID string
 	Score  int64
-	JWT    string // optional
+	JWT    string
+}
+
+type LoadParams struct {
+	UserID string
+	JWT    string
 }
 
 func (c *Client) SaveURL(p SaveParams) string {
@@ -78,17 +83,20 @@ func (c *Client) Save(ctx context.Context, p SaveParams) (string, error) {
 	return strings.TrimSpace(body), nil
 }
 
-func (c *Client) LoadURL(userID string) string {
-	sig := auth.SignHex(c.LoadSecret, auth.LoadSigMessage(userID))
+func (c *Client) LoadURL(p LoadParams) string {
+	sig := auth.SignHex(c.LoadSecret, auth.LoadSigMessage(p.UserID))
 	q := url.Values{}
-	q.Set("user_id", userID)
+	q.Set("user_id", p.UserID)
+	if p.JWT != "" {
+		q.Set("jwt", p.JWT)
+	}
 	q.Set("sig", sig)
 	return c.BaseURL + "/load?" + q.Encode()
 }
 
 // Load returns the score string. Returns ("", nil) when there is no save yet.
-func (c *Client) Load(ctx context.Context, userID string) (string, error) {
-	body, status, err := c.get(ctx, c.LoadURL(userID))
+func (c *Client) Load(ctx context.Context, p LoadParams) (string, error) {
+	body, status, err := c.get(ctx, c.LoadURL(p))
 	if err != nil {
 		return "", err
 	}
