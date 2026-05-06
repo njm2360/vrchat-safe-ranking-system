@@ -22,6 +22,6 @@ func (db *DB) BlacklistJTI(ctx context.Context, jti, reason string) error {
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
 		 ON CONFLICT(jti) DO NOTHING`,
-		jti, reason, db.nowUnix())
+		jti, reason, db.nowTS())
 	return err
 }

@@ -6,17 +6,18 @@ import (
 	"testing"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
+	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
 func TestUpsertUserAndIssue_NewUser(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice", "jti-1", "jwt-blob-1", "init"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "jwt-blob-1", "init"); err != nil {
 		t.Fatalf("UpsertUserAndIssue: %v", err)
 	}
 
-	u, err := d.GetUserByDiscordID(ctx, "discord-1")
+	u, err := d.GetUserByDiscordID(ctx, "119548486276710400")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,14 +38,14 @@ func TestUpsertUserAndIssue_RenewBlacklistsOldJTI(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice", "jti-1", "jwt-1", "init"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "jwt-1", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice2", "jti-2", "jwt-2", "rename"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice2", "jti-2", "jwt-2", "rename"); err != nil {
 		t.Fatal(err)
 	}
 
-	u, _ := d.GetUserByDiscordID(ctx, "discord-1")
+	u, _ := d.GetUserByDiscordID(ctx, "119548486276710400")
 	if u.DisplayName != "alice2" || u.CurrentJTI != "jti-2" {
 		t.Errorf("after renew, user = %+v", u)
 	}
@@ -58,10 +59,10 @@ func TestUpsertUserAndIssue_RejectsDisplayNameStolenByOtherDiscordID(t *testing.
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	err := d.UpsertUserAndIssue(ctx, "discord-2", "alice", "j2", "jwt2", "")
+	err := d.UpsertUserAndIssue(ctx, "119548486276710401", "alice", "j2", "jwt2", "")
 	if !errors.Is(err, db.ErrDisplayNameTaken) {
 		t.Fatalf("err = %v, want ErrDisplayNameTaken", err)
 	}
@@ -71,10 +72,10 @@ func TestGetCurrentJWT(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice", "j1", "jwt-blob", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt-blob", ""); err != nil {
 		t.Fatal(err)
 	}
-	gotJWT, gotName, err := d.GetCurrentJWT(ctx, "discord-1")
+	gotJWT, gotName, err := d.GetCurrentJWT(ctx, "119548486276710400")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +87,14 @@ func TestGetCurrentJWT(t *testing.T) {
 func TestGetUserByDisplayName(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "discord-1", "alice", "j1", "jwt", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt", ""); err != nil {
 		t.Fatal(err)
 	}
 	u, err := d.GetUserByDisplayName(ctx, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.DiscordID != "discord-1" {
+	if u.DiscordID != "119548486276710400" {
 		t.Errorf("DiscordID = %q", u.DiscordID)
 	}
 	if _, err := d.GetUserByDisplayName(ctx, "missing"); !errors.Is(err, db.ErrUserNotFound) {
@@ -106,14 +107,14 @@ func TestGetUserByDisplayName(t *testing.T) {
 func TestUpsertUserAndIssue_ReissueWithoutRename(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "d", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.UpsertUserAndIssue(ctx, "d", "alice", "j2", "jwt2", "reissue"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j2", "jwt2", "reissue"); err != nil {
 		t.Fatal(err)
 	}
 
-	u, _ := d.GetUserByDiscordID(ctx, "d")
+	u, _ := d.GetUserByDiscordID(ctx, "119548486276710402")
 	if u.CurrentJTI != "j2" {
 		t.Errorf("CurrentJTI = %q, want j2", u.CurrentJTI)
 	}
@@ -122,31 +123,88 @@ func TestUpsertUserAndIssue_ReissueWithoutRename(t *testing.T) {
 	}
 }
 
+// Token reissue (same display_name) must update latest_saves.jti so the user
+// stays in /ranking without needing to save again.
+func TestUpsertUserAndIssue_ReissueUpdatesLatestSavesJTI(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reissue token — j1 gets blacklisted.
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j2", "jwt2", "reissue"); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := d.Ranking(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].DisplayName != "alice" {
+		t.Errorf("ranking after reissue = %v, want alice still present", rows)
+	}
+}
+
+// Name change must NOT carry the new JTI to the old latest_saves row; the old
+// name drops from /ranking until the user saves again under the new name.
+func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename: j1 gets blacklisted, new name is "alice2".
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice2", "j2", "jwt2", "rename"); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := d.Ranking(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("ranking after rename = %v, want empty until next save", rows)
+	}
+}
+
 func TestUnregister_BlacklistsCurrentJTI(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "d", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Unregister(ctx, "d"); err != nil {
+	if err := d.Unregister(ctx, "119548486276710402"); err != nil {
 		t.Fatalf("Unregister: %v", err)
 	}
 	if black, _ := d.IsJTIBlacklisted(ctx, "j1"); !black {
 		t.Error("current jti should be blacklisted after Unregister")
 	}
-	// users row preserved so the display_name stays reserved.
-	u, err := d.GetUserByDiscordID(ctx, "d")
+	// users row preserved so the display_name stays reserved, but current_jti must be cleared.
+	u, err := d.GetUserByDiscordID(ctx, "119548486276710402")
 	if err != nil {
 		t.Fatalf("user row should still exist: %v", err)
 	}
 	if u.DisplayName != "alice" {
 		t.Errorf("DisplayName = %q, want alice", u.DisplayName)
 	}
+	if u.CurrentJTI != "" {
+		t.Errorf("CurrentJTI = %q, want empty after Unregister", u.CurrentJTI)
+	}
 }
 
 func TestUnregister_NotRegistered(t *testing.T) {
 	d := newTestDB(t, nil)
-	if err := d.Unregister(context.Background(), "ghost"); !errors.Is(err, db.ErrUserNotFound) {
+	if err := d.Unregister(context.Background(), "119548486276710999"); !errors.Is(err, db.ErrUserNotFound) {
 		t.Errorf("err = %v, want ErrUserNotFound", err)
 	}
 }
@@ -154,21 +212,21 @@ func TestUnregister_NotRegistered(t *testing.T) {
 func TestReleaseDisplayName(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "attacker", "victim_name", "j_atk", "jwt", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710403", "victim_name", "j_atk", "jwt", ""); err != nil {
 		t.Fatal(err)
 	}
 	prior, err := d.ReleaseDisplayName(ctx, "victim_name", "hijack")
 	if err != nil {
 		t.Fatalf("ReleaseDisplayName: %v", err)
 	}
-	if prior != "attacker" {
-		t.Errorf("prior = %q, want attacker", prior)
+	if prior != "119548486276710403" {
+		t.Errorf("prior = %q, want 119548486276710403", prior)
 	}
 	if black, _ := d.IsJTIBlacklisted(ctx, "j_atk"); !black {
 		t.Error("attacker jti should be blacklisted")
 	}
 	// users row gone — legitimate owner can now register the name.
-	if err := d.UpsertUserAndIssue(ctx, "victim", "victim_name", "j_vic", "jwt2", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710404", "victim_name", "j_vic", "jwt2", ""); err != nil {
 		t.Fatalf("legitimate registration after release should succeed: %v", err)
 	}
 }
@@ -182,7 +240,7 @@ func TestReleaseDisplayName_NotFound(t *testing.T) {
 
 func TestGetUserByDiscordIDNotFound(t *testing.T) {
 	d := newTestDB(t, nil)
-	if _, err := d.GetUserByDiscordID(context.Background(), "missing"); !errors.Is(err, db.ErrUserNotFound) {
+	if _, err := d.GetUserByDiscordID(context.Background(), "119548486276711000"); !errors.Is(err, db.ErrUserNotFound) {
 		t.Errorf("err = %v, want ErrUserNotFound", err)
 	}
 }

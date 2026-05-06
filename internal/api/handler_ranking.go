@@ -1,29 +1,27 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
+	"github.com/labstack/echo/v4"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 )
 
-func (s *Server) handleRanking(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRanking(c echo.Context) error {
 	limit := 10
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := c.QueryParam("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			limit = n
 		}
 	}
-	rows, err := s.saves.Ranking(r.Context(), limit)
+	rows, err := s.saves.Ranking(c.Request().Context(), limit)
 	if err != nil {
 		s.log.Error("ranking", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return c.String(http.StatusInternalServerError, "internal error")
 	}
 	if rows == nil {
 		rows = []db.RankingRow{}
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(rows)
+	return c.JSON(http.StatusOK, rows)
 }

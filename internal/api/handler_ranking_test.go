@@ -15,7 +15,7 @@ func TestRanking_ReturnsJSON(t *testing.T) {
 			{Rank: 2, DisplayName: "bob", Score: 100},
 		},
 	}
-	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
+	h := newServer(saves, &fakeJWT{}, fakeIDGen{})
 
 	rr, body := get(t, h, "/ranking?limit=10")
 	if rr.Code != http.StatusOK {
@@ -32,7 +32,7 @@ func TestRanking_ReturnsJSON(t *testing.T) {
 
 func TestRanking_EmptyEncodesAsEmptyArray(t *testing.T) {
 	saves := &fakeSaveStore{rankingRet: nil}
-	h := newServer(&fakeTicketStore{}, saves, &fakeJWT{}, fakeIDGen{})
+	h := newServer(saves, &fakeJWT{}, fakeIDGen{})
 
 	_, body := get(t, h, "/ranking")
 	if body != "[]\n" && body != "[]" {

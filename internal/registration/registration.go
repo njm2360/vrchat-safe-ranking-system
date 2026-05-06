@@ -1,6 +1,3 @@
-// Package registration encapsulates the /register flow used by both the
-// Discord bot and the vrcsim e2e helper. It depends on small interfaces
-// (Store, Issuer) so tests can substitute fakes.
 package registration
 
 import (
@@ -11,16 +8,13 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 )
 
-// Store is the subset of *db.DB the registration flow consumes.
 type Store interface {
-	IsBanned(ctx context.Context, discordID string) (bool, error)
-	ConsumeTicket(ctx context.Context, uuid string) (*db.Ticket, error)
+	IsDiscordIDBanned(ctx context.Context, discordID string) (bool, error)
+	IsDisplayNameBanned(ctx context.Context, displayName string) (bool, error)
 	GetUserByDiscordID(ctx context.Context, discordID string) (*db.User, error)
 	UpsertUserAndIssue(ctx context.Context, discordID, displayName, jti, jwt, reason string) error
 }
 
-// Issuer signs a fresh JWT for a (discordID, displayName) pair and returns
-// both the signed string and its jti.
 type Issuer interface {
 	Issue(discordID, displayName string) (jwt string, jti string, err error)
 }
@@ -37,26 +31,19 @@ func New(store Store, issuer Issuer) *Service {
 type Result struct {
 	JWT             string
 	JTI             string
-	DisplayName     string // The DisplayName bound to the new JWT.
-	PrevDisplayName string // The DisplayName the user had before this call (empty for new registrations).
+	DisplayName     string
+	PrevDisplayName string
 	IsRenewal       bool
 }
 
-// Errors returned by Register. Callers should compare with errors.Is.
 var (
-	ErrTicketNotFound   = errors.New("ticket not found")
-	ErrTicketExpired    = errors.New("ticket expired")
-	ErrTicketUsed       = errors.New("ticket already used")
-	ErrBanned           = errors.New("discord_id is banned")
-	ErrDisplayNameTaken = errors.New("display_name already registered by another discord_id")
+	ErrBanned            = errors.New("discord_id is banned")
+	ErrDisplayNameBanned = errors.New("display_name is banned")
+	ErrDisplayNameTaken  = errors.New("display_name already registered by another discord_id")
 )
 
-// Register consumes the ticket UUID and issues a JWT for (discordID,
-// ticket.DisplayName). If discordID already had a JWT, its old jti is
-// blacklisted as part of the same DB transaction. Banned discord_ids are
-// rejected before the ticket is consumed.
-func (s *Service) Register(ctx context.Context, discordID, ticketUUID string) (*Result, error) {
-	banned, err := s.store.IsBanned(ctx, discordID)
+func (s *Service) Register(ctx context.Context, discordID, displayName string) (*Result, error) {
+	banned, err := s.store.IsDiscordIDBanned(ctx, discordID)
 	if err != nil {
 		return nil, fmt.Errorf("ban check: %w", err)
 	}
@@ -64,21 +51,16 @@ func (s *Service) Register(ctx context.Context, discordID, ticketUUID string) (*
 		return nil, ErrBanned
 	}
 
-	ticket, err := s.store.ConsumeTicket(ctx, ticketUUID)
+	nameBanned, err := s.store.IsDisplayNameBanned(ctx, displayName)
 	if err != nil {
-		switch {
-		case errors.Is(err, db.ErrTicketNotFound):
-			return nil, ErrTicketNotFound
-		case errors.Is(err, db.ErrTicketExpired):
-			return nil, ErrTicketExpired
-		case errors.Is(err, db.ErrTicketUsed):
-			return nil, ErrTicketUsed
-		}
-		return nil, fmt.Errorf("consume ticket: %w", err)
+		return nil, fmt.Errorf("display name ban check: %w", err)
+	}
+	if nameBanned {
+		return nil, ErrDisplayNameBanned
 	}
 
 	existing, err := s.store.GetUserByDiscordID(ctx, discordID)
-	isRenewal := err == nil && existing != nil
+	isRenewal := err == nil && existing != nil && existing.CurrentJTI != ""
 	if err != nil && !errors.Is(err, db.ErrUserNotFound) {
 		return nil, err
 	}
@@ -87,12 +69,12 @@ func (s *Service) Register(ctx context.Context, discordID, ticketUUID string) (*
 		prevDisplayName = existing.DisplayName
 	}
 
-	jwt, jti, err := s.issuer.Issue(discordID, ticket.DisplayName)
+	jwt, jti, err := s.issuer.Issue(discordID, displayName)
 	if err != nil {
 		return nil, fmt.Errorf("issue jwt: %w", err)
 	}
 
-	if err := s.store.UpsertUserAndIssue(ctx, discordID, ticket.DisplayName, jti, jwt, "renewed via /register"); err != nil {
+	if err := s.store.UpsertUserAndIssue(ctx, discordID, displayName, jti, jwt, "renewed via /auth/register"); err != nil {
 		if errors.Is(err, db.ErrDisplayNameTaken) {
 			return nil, ErrDisplayNameTaken
 		}
@@ -102,7 +84,7 @@ func (s *Service) Register(ctx context.Context, discordID, ticketUUID string) (*
 	return &Result{
 		JWT:             jwt,
 		JTI:             jti,
-		DisplayName:     ticket.DisplayName,
+		DisplayName:     displayName,
 		PrevDisplayName: prevDisplayName,
 		IsRenewal:       isRenewal,
 	}, nil

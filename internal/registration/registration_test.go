@@ -4,33 +4,29 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
 )
 
-// fakeStore implements registration.Store with controllable behaviour.
 type fakeStore struct {
-	banned      bool
-	bannedErr   error
-	consumeRet  *db.Ticket
-	consumeErr  error
-	consumeCalls int
-	getUserRet  *db.User
-	getUserErr  error
-	upsertCalls []upsertCall
-	upsertErr   error
+	banned       bool
+	bannedErr    error
+	dnBanned     bool
+	dnBannedErr  error
+	getUserRet   *db.User
+	getUserErr   error
+	upsertCalls  []upsertCall
+	upsertErr    error
 }
 
 type upsertCall struct{ DiscordID, DisplayName, JTI, JWT, Reason string }
 
-func (f *fakeStore) IsBanned(_ context.Context, _ string) (bool, error) {
+func (f *fakeStore) IsDiscordIDBanned(_ context.Context, _ string) (bool, error) {
 	return f.banned, f.bannedErr
 }
-func (f *fakeStore) ConsumeTicket(_ context.Context, _ string) (*db.Ticket, error) {
-	f.consumeCalls++
-	return f.consumeRet, f.consumeErr
+func (f *fakeStore) IsDisplayNameBanned(_ context.Context, _ string) (bool, error) {
+	return f.dnBanned, f.dnBannedErr
 }
 func (f *fakeStore) GetUserByDiscordID(_ context.Context, _ string) (*db.User, error) {
 	return f.getUserRet, f.getUserErr
@@ -52,14 +48,11 @@ func (f *fakeIssuer) Issue(_, _ string) (string, string, error) {
 }
 
 func TestRegister_NewUser(t *testing.T) {
-	store := &fakeStore{
-		consumeRet: &db.Ticket{UUID: "u", DisplayName: "alice", IssuedAt: time.Now()},
-		getUserErr: db.ErrUserNotFound,
-	}
+	store := &fakeStore{getUserErr: db.ErrUserNotFound}
 	issuer := &fakeIssuer{jwtVal: "jwt-blob", jtiVal: "jti-1"}
 	svc := registration.New(store, issuer)
 
-	res, err := svc.Register(context.Background(), "discord-1", "u")
+	res, err := svc.Register(context.Background(), "discord-1", "alice")
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -79,13 +72,12 @@ func TestRegister_NewUser(t *testing.T) {
 
 func TestRegister_Renewal(t *testing.T) {
 	store := &fakeStore{
-		consumeRet: &db.Ticket{UUID: "u", DisplayName: "alice2"},
 		getUserRet: &db.User{DiscordID: "discord-1", DisplayName: "alice", CurrentJTI: "jti-old"},
 	}
 	issuer := &fakeIssuer{jwtVal: "new-jwt", jtiVal: "jti-new"}
 	svc := registration.New(store, issuer)
 
-	res, err := svc.Register(context.Background(), "discord-1", "u")
+	res, err := svc.Register(context.Background(), "discord-1", "alice2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,12 +93,9 @@ func TestRegister_Renewal(t *testing.T) {
 }
 
 func TestRegister_NewUser_PrevDisplayNameEmpty(t *testing.T) {
-	store := &fakeStore{
-		consumeRet: &db.Ticket{UUID: "u", DisplayName: "alice"},
-		getUserErr: db.ErrUserNotFound,
-	}
+	store := &fakeStore{getUserErr: db.ErrUserNotFound}
 	svc := registration.New(store, &fakeIssuer{jwtVal: "j", jtiVal: "x"})
-	res, err := svc.Register(context.Background(), "d", "u")
+	res, err := svc.Register(context.Background(), "d", "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,90 +105,74 @@ func TestRegister_NewUser_PrevDisplayNameEmpty(t *testing.T) {
 }
 
 func TestRegister_BannedRejected(t *testing.T) {
-	store := &fakeStore{
-		banned: true,
-		// These would be returned if the ban check were skipped, but they
-		// must NOT be reached.
-		consumeRet: &db.Ticket{DisplayName: "alice"},
-	}
-	svc := registration.New(store, &fakeIssuer{jwtVal: "j", jtiVal: "x"})
+	store := &fakeStore{banned: true}
+	issuer := &fakeIssuer{jwtVal: "j", jtiVal: "x"}
+	svc := registration.New(store, issuer)
 
-	_, err := svc.Register(context.Background(), "discord-banned", "u")
+	_, err := svc.Register(context.Background(), "discord-banned", "alice")
 	if !errors.Is(err, registration.ErrBanned) {
 		t.Fatalf("err = %v, want ErrBanned", err)
 	}
-	if store.consumeCalls != 0 {
-		t.Errorf("ticket should not be consumed when user is banned (got %d calls)", store.consumeCalls)
+	if issuer.calls != 0 {
+		t.Errorf("issuer should not be called when banned (got %d calls)", issuer.calls)
+	}
+	if len(store.upsertCalls) != 0 {
+		t.Error("upsert should not be called when banned")
 	}
 }
 
-func TestRegister_TicketErrors(t *testing.T) {
-	cases := []struct {
-		name       string
-		consumeErr error
-		want       error
-	}{
-		{"not found", db.ErrTicketNotFound, registration.ErrTicketNotFound},
-		{"expired", db.ErrTicketExpired, registration.ErrTicketExpired},
-		{"used", db.ErrTicketUsed, registration.ErrTicketUsed},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			svc := registration.New(&fakeStore{consumeErr: tc.consumeErr}, &fakeIssuer{})
-			_, err := svc.Register(context.Background(), "d", "u")
-			if !errors.Is(err, tc.want) {
-				t.Errorf("err = %v, want %v", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestRegister_UpsertError(t *testing.T) {
-	store := &fakeStore{
-		consumeRet: &db.Ticket{DisplayName: "alice"},
-		getUserErr: db.ErrUserNotFound,
-		upsertErr:  errors.New("display_name conflict"),
-	}
+func TestRegister_DisplayNameBannedRejected(t *testing.T) {
+	store := &fakeStore{getUserErr: db.ErrUserNotFound, dnBanned: true}
 	issuer := &fakeIssuer{jwtVal: "j", jtiVal: "x"}
 	svc := registration.New(store, issuer)
-	if _, err := svc.Register(context.Background(), "d", "u"); err == nil {
-		t.Fatal("expected error from upsert")
+
+	_, err := svc.Register(context.Background(), "discord-1", "banned-name")
+	if !errors.Is(err, registration.ErrDisplayNameBanned) {
+		t.Fatalf("err = %v, want ErrDisplayNameBanned", err)
+	}
+	if issuer.calls != 0 {
+		t.Errorf("issuer should not be called when display name is banned (got %d calls)", issuer.calls)
 	}
 }
 
 func TestRegister_DisplayNameTakenMapped(t *testing.T) {
 	store := &fakeStore{
-		consumeRet: &db.Ticket{DisplayName: "alice"},
 		getUserErr: db.ErrUserNotFound,
 		upsertErr:  db.ErrDisplayNameTaken,
 	}
 	svc := registration.New(store, &fakeIssuer{jwtVal: "j", jtiVal: "x"})
-	_, err := svc.Register(context.Background(), "d", "u")
+	_, err := svc.Register(context.Background(), "d", "alice")
 	if !errors.Is(err, registration.ErrDisplayNameTaken) {
 		t.Fatalf("err = %v, want ErrDisplayNameTaken", err)
 	}
 }
 
-func TestRegister_GetUserUnexpectedError(t *testing.T) {
+func TestRegister_UpsertError(t *testing.T) {
 	store := &fakeStore{
-		consumeRet: &db.Ticket{DisplayName: "alice"},
-		getUserErr: errors.New("db down"),
+		getUserErr: db.ErrUserNotFound,
+		upsertErr:  errors.New("display_name conflict"),
 	}
+	issuer := &fakeIssuer{jwtVal: "j", jtiVal: "x"}
+	svc := registration.New(store, issuer)
+	if _, err := svc.Register(context.Background(), "d", "alice"); err == nil {
+		t.Fatal("expected error from upsert")
+	}
+}
+
+func TestRegister_GetUserUnexpectedError(t *testing.T) {
+	store := &fakeStore{getUserErr: errors.New("db down")}
 	svc := registration.New(store, &fakeIssuer{})
-	if _, err := svc.Register(context.Background(), "d", "u"); err == nil {
+	if _, err := svc.Register(context.Background(), "d", "alice"); err == nil {
 		t.Fatal("expected db error to propagate")
 	}
 }
 
 func TestRegister_IssuerError(t *testing.T) {
-	store := &fakeStore{
-		consumeRet: &db.Ticket{DisplayName: "alice"},
-		getUserErr: db.ErrUserNotFound,
-	}
+	store := &fakeStore{getUserErr: db.ErrUserNotFound}
 	issuer := &fakeIssuer{err: errors.New("boom")}
 	svc := registration.New(store, issuer)
 
-	if _, err := svc.Register(context.Background(), "d", "u"); err == nil {
+	if _, err := svc.Register(context.Background(), "d", "alice"); err == nil {
 		t.Fatal("expected error from issuer")
 	}
 	if len(store.upsertCalls) != 0 {

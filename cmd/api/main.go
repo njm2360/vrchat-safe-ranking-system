@@ -15,6 +15,8 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/config"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/idgen"
+	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
+	"github.com/njm2360/vrchat-ranking-system/internal/registration"
 )
 
 func main() {
@@ -33,15 +35,30 @@ func main() {
 	}
 	defer database.Close()
 
+	issuer := auth.NewJWTIssuer(cfg.JWTSecret)
+	regSvc := registration.New(database, issuer)
+	var provider oauth.Provider
+	if cfg.OAuthMode == config.OAuthModeMock {
+		log.Warn("OAUTH_MODE=mock: real Discord login is bypassed; do NOT use in production")
+		provider = oauth.NewFakeEcho()
+	} else {
+		provider = oauth.NewDiscord(oauth.DiscordConfig{
+			ClientID:     cfg.DiscordClientID,
+			ClientSecret: cfg.DiscordClientSecret,
+			RedirectURL:  cfg.OAuthRedirectURL,
+		})
+	}
+
 	apiCfg := api.Config{
-		HMACSaveSecret:   cfg.HMACSaveSecret,
-		HMACLoadSecret:   cfg.HMACLoadSecret,
-		TicketTTL:        cfg.TicketTTL,
-		ChallengeRateTTL: cfg.ChallengeRateTTL,
+		HMACSaveSecret: cfg.HMACSaveSecret,
+		HMACLoadSecret: cfg.HMACLoadSecret,
+		OAuthStateTTL:  cfg.OAuthStateTTL,
+		SessionTTL:     cfg.SessionTTL,
+		MockOAuth:      cfg.OAuthMode == config.OAuthModeMock,
 	}
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           api.New(apiCfg, database, database, auth.NewJWTIssuer(cfg.JWTSecret), idgen.Real{}, log).Handler(),
+		Handler:           api.New(apiCfg, database, database, issuer, idgen.Real{}, provider, regSvc, log).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -55,10 +72,15 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if n, err := database.DeleteExpiredTickets(ctx, cfg.TicketRetention); err != nil {
-					log.Error("ticket cleanup", "err", err)
+				if n, err := database.DeleteExpiredOAuthStates(ctx); err != nil {
+					log.Error("oauth state cleanup", "err", err)
 				} else if n > 0 {
-					log.Info("ticket cleanup", "deleted", n)
+					log.Info("oauth state cleanup", "deleted", n)
+				}
+				if n, err := database.DeleteExpiredAuthSessions(ctx); err != nil {
+					log.Error("auth session cleanup", "err", err)
+				} else if n > 0 {
+					log.Info("auth session cleanup", "deleted", n)
 				}
 			}
 		}

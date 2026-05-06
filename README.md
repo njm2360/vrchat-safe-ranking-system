@@ -4,29 +4,34 @@
 
 ```bash
 cp .env.example .env
-# .env を開いて JWT_SECRET / HMAC_SAVE_SECRET / HMAC_LOAD_SECRET を長い乱数文字列に差し替え
+# .env を開いて以下を設定:
+#   JWT_SECRET / HMAC_SAVE_SECRET / HMAC_LOAD_SECRET  — 16バイト以上の乱数
+#   DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET         — Discord アプリの OAuth2 クレデンシャル
+#   BASE_URL                                          — 公開 URL
+#   OAUTH_REDIRECT_URL                                — 省略時 <BASE_URL>/auth/callback
 mkdir -p data
 go build ./...
 ```
 
-## 動作確認 (Bot 不要)
+Discord 開発者ポータルでアプリを作成し、OAuth2 リダイレクト URI に
+`<BASE_URL>/auth/callback` を登録すること。スコープは `identify` のみで足りる。
+
+## 動作確認 (Discord OAuth なし)
 
 ```bash
 # 1) API 起動
 go run ./cmd/api
 
-# 2) 別ターミナルで E2E
+# 2) 別ターミナルで E2E (registration.Service を直接叩いてOAuthをバイパス)
 go run ./cmd/vrcsim e2e --name alice --score 1234
 ```
 
 期待される出力:
 
-```
-=> challenge
-   UUID: 550e8400-...
-=> register (DB direct, bypassing bot)
+```sh
+=> register (DB direct, bypassing Discord OAuth)
    JWT: eyJhbGciOi...
-=> save (with JWT)
+=> save
    success
 => load
    score = 1234
@@ -34,19 +39,48 @@ go run ./cmd/vrcsim e2e --name alice --score 1234
    #1 alice : 1234
 ```
 
+## 動作確認 (Mock OAuth — Discord アプリなしで OAuth 風フロー)
+
+`.env` に `OAUTH_MODE=mock` を設定するとブラウザフローは以下の3段リダイレクトに置き換わる:
+
+```
+/auth/start?name=alice&fake_discord_id=100000000000000001&fake_username=alice.dev
+   ↓ 302
+/auth/mock-login?state=...&discord_id=100000000000000001&username=alice.dev   (Discord 認可画面の代わり)
+   ↓ 302
+/auth/callback?code=100000000000000001|alice.dev&state=...
+   ↓ 200 HTML (ポータル画面: @username + 現状表示 + アクションボタン)
+```
+
+どちらのクエリも optional:
+
+- `fake_discord_id` 省略時はリクエストごとに 18 桁ランダム snowflake を生成
+- `fake_username` 省略時は `name` クエリの値をそのまま流用
+
+```bash
+# .env: OAUTH_MODE=mock を設定
+go run ./cmd/api
+
+# 最小: name だけで十分。ID は乱数、username は alice として表示される
+xdg-open 'http://localhost:8100/auth/start?name=alice'
+
+# 同じ ID で再アクセスしたい場合は明示的に指定
+xdg-open 'http://localhost:8100/auth/start?name=alice&fake_discord_id=100000000000000001'
+
+# username だけ Discord 風に変えたい場合
+xdg-open 'http://localhost:8100/auth/start?name=alice&fake_username=alice.dev'
+```
+
 ## 個別動作確認
 
 ```bash
-# チケット発行
-go run ./cmd/vrcsim challenge --name alice
+# ブラウザで認証開始 (Discord モード)
+'http://localhost:8100/auth/start?name=alice'
 
-# Bot 起動済みなら Discord で /register <UUID>
-# Bot なしなら e2e サブコマンドで代替
-
-# セーブ送信 (HMAC 計算 + JWT 込み)
+# セーブ (HMACは自動計算)
 go run ./cmd/vrcsim save --score 9999 --jwt 'eyJ...'
 
-# ロード (JWT 必須; レスポンスの sig をクライアント側で検証する)
+# ロード (レスポンスは自動検証)
 go run ./cmd/vrcsim load --jwt 'eyJ...'
 
 # ランキング
@@ -57,91 +91,129 @@ go run ./cmd/vrcsim save --score 100 --jwt 'eyJ...' --print-url
 go run ./cmd/vrcsim load --jwt 'eyJ...' --print-url
 ```
 
-## Bot 起動
+## 管理 CLI
+
+ban / unban / whois / DisplayName 解放 / JTI 無効化はサーバホスト上の CLI で行う。
+DB ファイル (`DB_PATH`) に直接アクセスするので、API と同じホストで実行すること。
 
 ```bash
-# .env に BOT_TOKEN, BOT_GUILD_ID, ADMIN_USER_IDS を設定
-go run ./cmd/bot
+go run ./cmd/admin ban --discord-id 123456789012345678 --reason 不正
+go run ./cmd/admin unban --discord-id 123456789012345678
+go run ./cmd/admin whois --name alice
+go run ./cmd/admin whois --discord-id 123456789012345678
+go run ./cmd/admin release-name --name bob
+go run ./cmd/admin invalidate-token --jti <jti>
 ```
 
-スラッシュコマンド:
+## エンドポイント仕様
 
-| コマンド | 説明 |
-| --- | --- |
-| `/register uuid:<UUID>` | UUID を JWT に引き換え。再実行で新しい JWT に更新 (旧 jti は自動的にブラックリスト入り) |
-| `/mytoken` | 直近発行の JWT を再表示 |
-| `/unregister` | ランキングから自分を除外する (DisplayName 予約は維持。再度 `/register` で復帰可能) |
-| `/ban discord_id:<id> reason:<...>` | 管理者専用。ランキング非掲載 + 登録不可 |
-| `/unban discord_id:<id>` | 管理者専用 |
-| `/invalidate-token jti:<...>` | 管理者専用。JTI 単体の無効化 |
-| `/whois name:<DisplayName>` | 管理者専用。VRChat 名から登録情報を検索 |
-| `/whois user:<@mention>` | 管理者専用。Discord ユーザーから登録情報を検索 |
-| `/release-name name:<DisplayName>` | 管理者専用。他のアカウントに不正取得された DisplayName を強制解放 |
+### OAuth フロー (ブラウザ)
 
-## エンドポイント仕様 (Udon 実装者向け)
+| Method | Path                                  | 用途                                                  |
+| ------ | ------------------------------------- | ----------------------------------------------------- |
+| GET    | `/auth/start?name=<DisplayName>`      | Discord OAuth を開始 (action 不要、name のみ必須)     |
+| GET    | `/auth/callback?code=&state=`         | Discord からの戻り。state を検証し portal-view へ 303 |
+| GET    | `/auth/portal?token=<x>`              | ポータル画面のレンダリング (consume なし、リロード可) |
+| POST   | `/auth/portal`                        | アクションボタンの確定。`token`/`action` をフォーム送信 |
 
-すべて GET。`/load` のレスポンスのみ JSON、他は `text/plain` (`/ranking` も JSON)。
+`/auth/start?name=alice` は CSRF 用の state を発行し Discord 認可画面に 302 する。
+ユーザーが認可すると `/auth/callback` に戻り、state を消費しつつ単発使用のセッショントークンを発行、
+`GET /auth/portal?token=…` に **303 リダイレクト**する。
+リダイレクト先で表示される**ポータル画面**には:
 
-### `GET /challenge?name=<DisplayName>`
+- 認証された Discord ID
+- 現在の登録状態 (登録済みなら DisplayName と現在の JWT を直接表示)
+- 文脈に応じたアクションボタン:
+  - 未登録: `[Register]`
+  - 登録済み・同名: `[Reissue token]` `[Unregister]`
+  - 登録済み・改名: `[Apply name change]` `[Unregister]`
+  - name が他アカウント所有: 警告のみ表示 (Register は出さない)
 
-- レスポンス: UUID 文字列 1 行
-- レート: 同 DisplayName について 1 分に 1 回 (`429`)
-- TTL: UUID は 5 分で失効 (`/register` 時に消費)
+トークン確認 (mytoken) はポータル冒頭に常に表示されるため別アクションは不要。
+`[Register]` `[Unregister]` 押下時のみ `POST /auth/portal` が叩かれてコミットされる。
+ポータル画面自体が「いま誰として何が起こるか」の確認ステップを兼ねる。
 
-### `GET /save?score=<int>&jwt=<JWT>&sig=<hex>`
+ポータルは GET (view) と POST (commit) で分離されているため、ブラウザの戻る/リロードで
+`/auth/portal?token=…` に再アクセスしても session 期限内なら何度でも同じ画面が出る。
+`/auth/callback?state=…&code=…` 自体のリロードだけは OAuth 仕様上単発使用なので失敗する。
 
+これにより、誤って別の Discord アカウント (サブ垢など) で OAuth した場合でも
+ポータルで気付いて中断でき、本垢の JWT が無断で取り消される事故を防げる。
+さらに、本垢の name で OAuth しようとしてもサブ垢でログインしていれば
+「name は他アカウント所有」警告で Register 自体出ないため、二重に守られる。
+
+### Udon クライアント向け (GET のみ)
+
+セーブデータは `internal/savedata.Data` 構造体で表現される JSON オブジェクト。
+現状のフィールドは `score` のみ。フィールドを追加する際は
+
+1. `internal/savedata/savedata.go` の `Data` 構造体に **末尾追加** で field を生やす
+2. `save_history` / `latest_saves` に対応するカラムを `ALTER TABLE ADD COLUMN` で追加
+3. `internal/db/saves.go` の `Save` の INSERT と `scanSaveEntry` の SELECT を拡張
+
+の3点をセットで行う。HMAC 入力はこの JSON のキャノニカルバイト列。
+
+#### `GET /save?data=<urlencoded JSON>&jwt=<JWT>&sig=<hex>`
+
+- `data` は `savedata.Data` をシリアライズした JSON (例: `{"score":1234}`)。
+  URL クエリに載せる際は URL エンコードする
+- `sig` = `HMAC-SHA256(HMAC_SAVE_SECRET, <data の URL デコード後 raw bytes>)` → lowercase hex
 - `jwt` は **必須**。JWT に含まれる DisplayName でランキングを紐付ける
-- `sig` = `HMAC-SHA256(HMAC_SAVE_SECRET, "<score>")` → lowercase hex
 - JWT が無効または JTI がブラックリスト済みの場合は `401`
 - レスポンス: `success`
 
-### `GET /load?jwt=<JWT>`
+#### `GET /load?jwt=<JWT>`
 
-- `jwt` は **必須**。JWT に含まれる DisplayName の最新スコアを返す
+- `jwt` は **必須**。JWT に含まれる DisplayName の最新セーブを返す
 - リクエストに sig は不要
 - セーブなしの場合は `404`
 - **レスポンス (200)**: JSON
 
 ```json
-{"score": 1234, "sig": "<hex>"}
+{"data":{"score":1234},"sig":"<hex>"}
 ```
 
-`sig` = `HMAC-SHA256(HMAC_LOAD_SECRET, "<score>")` → lowercase hex
+`sig` = `HMAC-SHA256(HMAC_LOAD_SECRET, <data の raw JSON bytes>)` → lowercase hex
 
-Udon クライアント側でこの sig を検証することで MITM によるスコア改ざんを検知できる。
+Udon クライアント側でこの sig を検証することで MITM による改ざんを検知できる。
+`data` フィールドは server がエンコードしたバイト列をそのまま受け取り (空白なし、
+field 順は構造体定義順) HMAC を計算する想定。
 
-### `GET /ranking?limit=10`
+#### `GET /ranking?limit=10`
 
 検証用。有効な JWT でセーブ済み・BAN されていないユーザーを JSON 配列で返す。
 
-## HMAC 対象文字列フォーマット
+## HMAC 対象バイト列フォーマット
 
-| 場面 | メッセージ | 鍵 | 方向 |
-| --- | --- | --- | --- |
-| `/save` リクエスト sig | `<score>` | `HMAC_SAVE_SECRET` | クライアント → サーバー |
-| `/load` レスポンス sig | `<score>` | `HMAC_LOAD_SECRET` | サーバー → クライアント |
+| 場面                   | メッセージ                       | 鍵                 | 方向                    |
+| ---------------------- | -------------------------------- | ------------------ | ----------------------- |
+| `/save` リクエスト sig | `data` の URL デコード後 raw bytes | `HMAC_SAVE_SECRET` | クライアント → サーバー |
+| `/load` レスポンス sig | レスポンス内 `data` の raw bytes   | `HMAC_LOAD_SECRET` | サーバー → クライアント |
 
-`score` は 10 進整数文字列 (Go の `strconv.FormatInt(v, 10)` 相当)。
+両方向で同じ `savedata.Data` 構造体のキャノニカル JSON 表現が HMAC 入力となる。
+Go の `encoding/json` 出力 (空白なし、struct 定義順) を canonical と定義する。
 
 ## 既知の制約
 
 - HTTPS は未対応 (本番は Caddy/nginx 前段か `crypto/tls`)
 - スコアは整数 1 値のみ
-- Udon クライアントに埋め込んだ HMAC 秘密鍵は抽出可能。`HMAC_SAVE_SECRET` が漏洩すると他者のスコアを偽装できるが、JWT 必須化により Discord アカウントと紐付いた正規ユーザーしか書き込めない構造になっている
-- チケット発行時の DisplayName 所有確認なし → レート制限のみで対応
+- Udon クライアントに埋め込んだ HMAC 秘密鍵は抽出可能。`HMAC_SAVE_SECRET` が漏洩
+  すると他者のスコアを偽装できるが、JWT 必須化により Discord アカウントと紐付いた
+  正規ユーザーしか書き込めない構造になっている
 - マルチランキング非対応
-- Bot/API は同一ホスト前提 (SQLite ファイル共有)。別ホストにする場合は PostgreSQL 等への差し替えが必要
+- API と admin CLI は同一ホスト前提 (SQLite ファイル共有)
 
 ## ディレクトリ構成
 
 ```
-cmd/api      — HTTP サーバ
-cmd/bot      — Discord Bot
+cmd/api      — HTTP サーバ (Udon API + OAuth web flow)
+cmd/admin    — 管理者 CLI (ban / whois / 等)
 cmd/vrcsim   — VRChat Udon クライアント模擬 CLI
 internal/api          — HTTP ハンドラ
 internal/auth         — JWT (HS256) / HMAC ヘルパ
 internal/config       — env 読み込み
 internal/db           — SQLite スキーマ + リポジトリ
-internal/registration — /register フロー (bot/vrcsim 共有)
+internal/oauth        — Discord OAuth Provider + テスト用 Fake
+internal/registration — JWT 発行コア (OAuth callback / e2e CLI 共通)
 internal/vrcclient    — Udon が叩く URL の組み立て + GET 実行
 ```

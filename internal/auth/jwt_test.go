@@ -48,11 +48,20 @@ func TestJWTVerifyTamperedSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Flip last char of signature
-	tampered := tok[:len(tok)-1] + "X"
-	if tampered == tok {
-		tampered = tok[:len(tok)-1] + "Y"
+	// Flip the first signature char (the segment after the last '.'). The
+	// last char encodes only 2 bits of payload (top 4 bits unused), so
+	// tampering it can decode to the same byte slice; flipping a leading
+	// char always changes the decoded signature bytes.
+	dot := strings.LastIndex(tok, ".")
+	if dot < 0 || dot+1 >= len(tok) {
+		t.Fatalf("malformed token: %q", tok)
 	}
+	first := tok[dot+1]
+	flipped := byte('A')
+	if first == flipped {
+		flipped = 'B'
+	}
+	tampered := tok[:dot+1] + string(flipped) + tok[dot+2:]
 	if _, err := issuer.Verify(tampered); err == nil {
 		t.Fatal("Verify accepted a tampered signature")
 	}

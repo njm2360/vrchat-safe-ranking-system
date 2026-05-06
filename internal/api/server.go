@@ -1,33 +1,49 @@
-// Package api implements the HTTP endpoints called from VRChat Udon clients.
+// Package api implements the HTTP endpoints called from VRChat Udon clients
+// and the OAuth-based registration web flow.
 //
-// The Server depends on small interfaces (defined here, in the consumer
-// package) so tests can substitute fakes for the database, JWT verifier and
-// ID generator.
+// The Server depends on small interfaces so tests can substitute fakes.
 package api
+
+//go:generate oapi-codegen --config oapi-codegen.yaml ../../api/openapi.yaml
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 
+	"log/slog"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
+	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
+	"github.com/njm2360/vrchat-ranking-system/internal/registration"
+	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
-
-// TicketStore is the subset of *db.DB the challenge handler needs.
-type TicketStore interface {
-	InsertTicket(ctx context.Context, uuid, displayName string, ttl time.Duration) error
-	CheckChallengeRate(ctx context.Context, displayName string, window time.Duration) (last time.Time, allowed bool, err error)
-	UpsertChallengeRate(ctx context.Context, displayName string) error
-}
 
 // SaveStore is the subset of *db.DB the save/load/ranking handlers need.
 type SaveStore interface {
-	Save(ctx context.Context, displayName string, score int64, jti string) (historyID int64, err error)
+	Save(ctx context.Context, displayName string, data *savedata.Data, jti string) (historyID int64, err error)
 	GetLatestSave(ctx context.Context, displayName string) (*db.SaveEntry, error)
 	Ranking(ctx context.Context, limit int) ([]db.RankingRow, error)
+}
+
+// AuthStore is the subset of *db.DB the OAuth handlers need.
+type AuthStore interface {
 	IsJTIBlacklisted(ctx context.Context, jti string) (bool, error)
+	IsDisplayNameBanned(ctx context.Context, displayName string) (bool, error)
+	InsertOAuthState(ctx context.Context, state, proposedName string, ttl time.Duration) error
+	ConsumeOAuthState(ctx context.Context, state string) (*db.OAuthState, error)
+	IsDiscordIDBanned(ctx context.Context, discordID string) (bool, error)
+	GetCurrentJWT(ctx context.Context, discordID string) (jwt, displayName string, err error)
+	GetUserByDiscordID(ctx context.Context, discordID string) (*db.User, error)
+	GetUserByDisplayName(ctx context.Context, displayName string) (*db.User, error)
+	Unregister(ctx context.Context, discordID string) error
+	InsertAuthSession(ctx context.Context, token, discordID, discordUsername, proposedName string, ttl time.Duration) error
+	GetAuthSession(ctx context.Context, token string) (*db.AuthSession, error)
+	ConsumeAuthSession(ctx context.Context, token string) (*db.AuthSession, error)
 }
 
 // JWTVerifier verifies a JWT and returns its claims.
@@ -42,73 +58,77 @@ type IDGen interface {
 
 // Config carries the runtime parameters the handlers consult.
 type Config struct {
-	HMACSaveSecret   []byte
-	HMACLoadSecret   []byte
-	TicketTTL        time.Duration
-	ChallengeRateTTL time.Duration
+	HMACSaveSecret []byte
+	HMACLoadSecret []byte
+	OAuthStateTTL  time.Duration
+	SessionTTL     time.Duration
+	MockOAuth      bool
 }
 
 type Server struct {
-	cfg     Config
-	tickets TicketStore
-	saves   SaveStore
-	jwt     JWTVerifier
-	idgen   IDGen
-	log     *slog.Logger
+	cfg      Config
+	saves    SaveStore
+	authDB   AuthStore
+	jwt      JWTVerifier
+	idgen    IDGen
+	provider oauth.Provider
+	regSvc   *registration.Service
+	log      *slog.Logger
 }
 
-func New(cfg Config, tickets TicketStore, saves SaveStore, jwt JWTVerifier, idgen IDGen, log *slog.Logger) *Server {
+func New(cfg Config, saves SaveStore, authDB AuthStore, jwt JWTVerifier, idgen IDGen, provider oauth.Provider, regSvc *registration.Service, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{cfg: cfg, tickets: tickets, saves: saves, jwt: jwt, idgen: idgen, log: log}
+	return &Server{
+		cfg:      cfg,
+		saves:    saves,
+		authDB:   authDB,
+		jwt:      jwt,
+		idgen:    idgen,
+		provider: provider,
+		regSvc:   regSvc,
+		log:      log,
+	}
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /challenge", s.handleChallenge)
-	mux.HandleFunc("GET /save", s.handleSave)
-	mux.HandleFunc("GET /load", s.handleLoad)
-	mux.HandleFunc("GET /ranking", s.handleRanking)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
-	return s.logMiddleware(mux)
-}
+	e := echo.New()
 
-func (s *Server) logMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &statusWriter{ResponseWriter: w, status: 200}
-		next.ServeHTTP(rw, r)
-		s.log.Info("http",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"query", r.URL.RawQuery,
-			"status", rw.status,
-			"elapsed_ms", time.Since(start).Milliseconds(),
-		)
-	})
-}
+	e.HideBanner = true
+	e.HidePort = true
 
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-}
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		code := http.StatusInternalServerError
+		msg := "internal error"
+		if he, ok := err.(*echo.HTTPError); ok {
+			code = he.Code
+			if m, ok := he.Message.(string); ok {
+				msg = m
+			}
+		}
+		if !c.Response().Committed {
+			c.String(code, msg) //nolint:errcheck
+		}
+	}
 
-func (sw *statusWriter) WriteHeader(code int) {
-	sw.status = code
-	sw.ResponseWriter.WriteHeader(code)
-}
+	e.Use(middleware.RequestLogger())
+	e.Use(middleware.Recover())
 
-func writePlain(w http.ResponseWriter, status int, body string) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(status)
-	w.Write([]byte(body))
-}
+	e.GET("/save", s.handleSave, s.requireJWT)
+	e.GET("/load", s.handleLoad, s.requireJWT)
+	e.GET("/ranking", s.handleRanking)
+	e.GET("/auth/start", s.handleAuthStart)
+	e.GET("/auth/callback", s.handleAuthCallback)
+	e.GET("/auth/portal", s.handleAuthPortalView)
+	e.POST("/auth/register", s.handleAuthRegister)
+	e.POST("/auth/unregister", s.handleAuthUnregister)
+	if s.cfg.MockOAuth {
+		e.GET("/auth/mock-login", s.handleAuthMockLogin)
+	}
 
-func writeJSON(w http.ResponseWriter, status int, body string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	w.Write([]byte(body))
+	e.GET("/openapi.yaml", handleOpenapiSpec)
+	e.GET("/swagger", handleSwaggerUI)
+
+	return e
 }
