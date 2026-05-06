@@ -10,7 +10,7 @@ func TestHMACSignVerifyRoundtrip(t *testing.T) {
 	key := []byte("save-secret")
 	msg := []byte("alice|1234")
 	sig := auth.SignHex(key, msg)
-	if !auth.VerifyHex(key, msg, sig) {
+	if !auth.VerifyHex(key, sig, msg) {
 		t.Fatal("VerifyHex rejected its own signature")
 	}
 }
@@ -30,23 +30,9 @@ func TestHMACVerifyRejectsTampering(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if auth.VerifyHex(key, tc.msg, tc.sig) {
+			if auth.VerifyHex(key, tc.sig, tc.msg) {
 				t.Errorf("Verify accepted bad input")
 			}
 		})
-	}
-}
-
-func TestSaveSigMessageFormat(t *testing.T) {
-	got := string(auth.SaveSigMessage(1234))
-	if got != "1234" {
-		t.Errorf("SaveSigMessage = %q, want %q", got, "1234")
-	}
-}
-
-func TestLoadSigMessageFormat(t *testing.T) {
-	got := string(auth.LoadSigMessage(1234))
-	if got != "1234" {
-		t.Errorf("LoadSigMessage = %q, want %q", got, "1234")
 	}
 }

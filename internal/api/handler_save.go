@@ -2,55 +2,42 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
+	"github.com/labstack/echo/v4"
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
+	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
-func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	scoreStr := strings.TrimSpace(q.Get("score"))
-	jwtStr := strings.TrimSpace(q.Get("jwt"))
-	sigHex := strings.TrimSpace(q.Get("sig"))
+func (s *Server) handleSave(c echo.Context) error {
+	dataStr := c.QueryParam("data")
+	displayName := c.QueryParam("display_name")
+	sigHex := strings.TrimSpace(c.QueryParam("sig"))
 
-	score, err := strconv.ParseInt(scoreStr, 10, 64)
-	if err != nil {
-		writePlain(w, http.StatusBadRequest, "invalid score")
-		return
+	if dataStr == "" {
+		return c.String(http.StatusBadRequest, "missing data")
+	}
+	if displayName == "" {
+		return c.String(http.StatusBadRequest, "missing display_name")
 	}
 	if sigHex == "" {
-		writePlain(w, http.StatusBadRequest, "missing sig")
-		return
+		return c.String(http.StatusBadRequest, "missing sig")
 	}
-	if !auth.VerifyHex(s.cfg.HMACSaveSecret, auth.SaveSigMessage(score), sigHex) {
-		writePlain(w, http.StatusUnauthorized, "invalid sig")
-		return
+	if !auth.VerifyHex(s.cfg.HMACSaveSecret, sigHex, []byte(dataStr), []byte(displayName)) {
+		return c.String(http.StatusBadRequest, "invalid sig")
 	}
-	if jwtStr == "" {
-		writePlain(w, http.StatusUnauthorized, "missing jwt")
-		return
-	}
-	claims, err := s.jwt.Verify(jwtStr)
-	if err != nil {
-		writePlain(w, http.StatusUnauthorized, "jwt invalid")
-		return
-	}
-	blacklisted, err := s.saves.IsJTIBlacklisted(r.Context(), claims.JTI)
-	if err != nil {
-		s.log.Error("jti blacklist check", "err", err)
-		writePlain(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if blacklisted {
-		writePlain(w, http.StatusUnauthorized, "jwt revoked")
-		return
+	claims := claimsFromEcho(c)
+	if displayName != claims.DisplayName {
+		return c.String(http.StatusUnauthorized, "display_name mismatch")
 	}
 
-	if _, err := s.saves.Save(r.Context(), claims.DisplayName, score, claims.JTI); err != nil {
-		s.log.Error("save", "err", err)
-		writePlain(w, http.StatusInternalServerError, "internal error")
-		return
+	data, err := savedata.Unmarshal([]byte(dataStr))
+	if err != nil {
+		return c.String(http.StatusBadRequest, "invalid data json")
 	}
-	writePlain(w, http.StatusOK, "success")
+	if _, err := s.saves.Save(c.Request().Context(), claims.DisplayName, data, claims.JTI); err != nil {
+		s.log.Error("save", "err", err)
+		return c.String(http.StatusInternalServerError, "internal error")
+	}
+	return c.String(http.StatusOK, "success")
 }

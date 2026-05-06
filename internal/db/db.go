@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -24,14 +25,10 @@ type DB struct {
 
 type Option func(*DB)
 
-// WithClock injects a Clock so tests can control time-of-creation timestamps.
-// Defaults to clock.System if not supplied.
 func WithClock(c clock.Clock) Option {
 	return func(d *DB) { d.clock = c }
 }
 
-// Open opens (or creates) the SQLite database at path with WAL mode and
-// applies the schema.
 func Open(path string, opts ...Option) (*DB, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." && path != ":memory:" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -60,16 +57,12 @@ func Open(path string, opts ...Option) (*DB, error) {
 	return d, nil
 }
 
-// OpenInMemory opens an isolated SQLite memory database for tests.
 func OpenInMemory(opts ...Option) (*DB, error) {
-	// Each :memory: connection is isolated; modernc.org/sqlite needs the
-	// shared-cache + named URI form for multi-statement reuse.
 	return Open("file::memory:?cache=shared&_pragma=foreign_keys(on)", opts...)
 }
 
 func buildDSN(path string) string {
 	if u, err := url.Parse(path); err == nil && u.Scheme == "file" {
-		// Already a URI; assume caller knows what they want.
 		return path
 	}
 	q := url.Values{}
@@ -80,5 +73,9 @@ func buildDSN(path string) string {
 	return path + "?" + q.Encode()
 }
 
-// nowUnix returns the current epoch second from the injected clock.
-func (db *DB) nowUnix() int64 { return db.clock.Now().Unix() }
+func (db *DB) nowTS() string { return db.clock.Now().UTC().Format(time.RFC3339) }
+
+func parseTS(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
+}

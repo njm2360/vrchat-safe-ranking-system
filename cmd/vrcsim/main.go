@@ -12,6 +12,7 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/config"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
+	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 	"github.com/njm2360/vrchat-ranking-system/internal/vrcclient"
 )
 
@@ -30,8 +31,6 @@ func main() {
 	ctx := context.Background()
 
 	switch sub {
-	case "challenge":
-		runChallenge(ctx, client, args)
 	case "save":
 		runSave(ctx, client, args)
 	case "load":
@@ -51,18 +50,15 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `vrcsim — VRChat Udon client simulator
 
 Subcommands:
-  challenge --name <DisplayName>
-      Issue /challenge and print the UUID.
+  save --score <int> --jwt <JWT> --display-name <name> [--print-url]
+      Sign and send /save.
 
-  save --name <DisplayName> --score <int> [--jwt <JWT>] [--print-url]
-      Sign and send /save. Without --jwt the score is saved locally only.
-
-  load --name <DisplayName>
-      Sign and send /load. Prints the score (empty for no save).
+  load --jwt <JWT> --display-name <name> [--print-url]
+      Send /load. Prints the score (empty for no save).
 
   e2e --name <DisplayName> [--discord-id <id>] [--score <int>]
-      Full happy-path flow with no Discord bot:
-        challenge → register (DB direct) → save → load → ranking.`)
+      Full happy-path flow with no Discord OAuth round-trip:
+        register (DB direct via registration.Service) → save → load → ranking.`)
 }
 
 func exitIf(err error) {
@@ -72,37 +68,26 @@ func exitIf(err error) {
 	}
 }
 
-func runChallenge(ctx context.Context, client *vrcclient.Client, args []string) {
-	fs := flag.NewFlagSet("challenge", flag.ExitOnError)
-	name := fs.String("name", "", "DisplayName")
-	printURL := fs.Bool("print-url", false, "print URL only, do not request")
-	_ = fs.Parse(args)
-	if *name == "" {
-		exitIf(fmt.Errorf("--name required"))
-	}
-	if *printURL {
-		fmt.Println(client.ChallengeURL(*name))
-		return
-	}
-	uuid, err := client.RequestChallenge(ctx, *name)
-	exitIf(err)
-	fmt.Println(uuid)
-}
-
 func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("save", flag.ExitOnError)
 	score := fs.Int64("score", 0, "score (int)")
 	jwt := fs.String("jwt", "", "JWT. Prefix with @ to read from file.")
+	displayName := fs.String("display-name", "", "VRChat display name (must match JWT claim)")
 	printURL := fs.Bool("print-url", false, "print URL only, do not request")
 	_ = fs.Parse(args)
 	if *jwt == "" {
 		exitIf(fmt.Errorf("--jwt required"))
 	}
+	if *displayName == "" {
+		exitIf(fmt.Errorf("--display-name required"))
+	}
 	jwtStr, err := readMaybeFile(*jwt)
 	exitIf(err)
-	p := vrcclient.SaveParams{Score: *score, JWT: jwtStr}
+	p := vrcclient.SaveParams{Data: &savedata.Data{Score: *score}, JWT: jwtStr, DisplayName: *displayName}
 	if *printURL {
-		fmt.Println(client.SaveURL(p))
+		u, err := client.SaveURL(p)
+		exitIf(err)
+		fmt.Println(u)
 		return
 	}
 	body, err := client.Save(ctx, p)
@@ -113,30 +98,35 @@ func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 func runLoad(ctx context.Context, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("load", flag.ExitOnError)
 	jwt := fs.String("jwt", "", "JWT. Prefix with @ to read from file.")
+	displayName := fs.String("display-name", "", "VRChat display name (must match JWT claim)")
 	printURL := fs.Bool("print-url", false, "print URL only, do not request")
 	_ = fs.Parse(args)
 	if *jwt == "" {
 		exitIf(fmt.Errorf("--jwt required"))
 	}
+	if *displayName == "" {
+		exitIf(fmt.Errorf("--display-name required"))
+	}
 	jwtStr, err := readMaybeFile(*jwt)
 	exitIf(err)
+	p := vrcclient.LoadParams{JWT: jwtStr, DisplayName: *displayName}
 	if *printURL {
-		fmt.Println(client.LoadURL(vrcclient.LoadParams{JWT: jwtStr}))
+		fmt.Println(client.LoadURL(p))
 		return
 	}
-	v, err := client.Load(ctx, vrcclient.LoadParams{JWT: jwtStr})
+	v, err := client.Load(ctx, p)
 	exitIf(err)
-	if v == "" {
+	if v == nil {
 		fmt.Fprintln(os.Stderr, "(no save)")
 		return
 	}
-	fmt.Println(v)
+	fmt.Printf("score = %d\n", v.Score)
 }
 
 func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, args []string) {
 	fs := flag.NewFlagSet("e2e", flag.ExitOnError)
 	name := fs.String("name", "", "DisplayName")
-	discordID := fs.String("discord-id", "e2e-test-user", "Discord user ID (省略時は e2e-test-user)")
+	discordID := fs.String("discord-id", "e2e-test-user", "Discord user ID (デフォルト e2e-test-user)")
 	score := fs.Int64("score", 1234, "score to save")
 	_ = fs.Parse(args)
 	if *name == "" {
@@ -147,29 +137,28 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	exitIf(err)
 	defer database.Close()
 
-	fmt.Println("=> challenge")
-	uuid, err := client.RequestChallenge(ctx, *name)
-	exitIf(err)
-	fmt.Println("   UUID:", uuid)
-
-	fmt.Println("=> register (DB direct, bypassing bot)")
+	fmt.Println("=> register (DB direct, bypassing Discord OAuth)")
 	svc := registration.New(database, auth.NewJWTIssuer(cfg.JWTSecret))
-	res, err := svc.Register(ctx, *discordID, uuid)
+	res, err := svc.Register(ctx, *discordID, *name)
 	exitIf(err)
 	if res.IsRenewal {
 		fmt.Println("   (renewal — old jti blacklisted)")
 	}
 	fmt.Println("   JWT:", res.JWT)
 
-	fmt.Println("=> save (with JWT)")
-	body, err := client.Save(ctx, vrcclient.SaveParams{Score: *score, JWT: res.JWT})
+	fmt.Println("=> save")
+	body, err := client.Save(ctx, vrcclient.SaveParams{Data: &savedata.Data{Score: *score}, JWT: res.JWT})
 	exitIf(err)
 	fmt.Println("   ", body)
 
 	fmt.Println("=> load")
 	loaded, err := client.Load(ctx, vrcclient.LoadParams{JWT: res.JWT})
 	exitIf(err)
-	fmt.Println("   score =", loaded)
+	if loaded == nil {
+		fmt.Println("   (no save)")
+	} else {
+		fmt.Println("   score =", loaded.Score)
+	}
 
 	fmt.Println("=> ranking (top 10)")
 	rows, err := database.Ranking(ctx, 10)

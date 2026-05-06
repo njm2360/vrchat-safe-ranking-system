@@ -1,7 +1,3 @@
-// Package vrcclient mimics what a VRChat Udon client would do: build URLs,
-// compute HMAC signatures, and issue GET requests against the ranking API.
-//
-// All operations are GET-only (matching the Udon constraint).
 package vrcclient
 
 import (
@@ -11,10 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
+	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
 type Client struct {
@@ -33,39 +29,35 @@ func New(baseURL string, saveSecret, loadSecret []byte) *Client {
 	}
 }
 
-func (c *Client) ChallengeURL(displayName string) string {
-	q := url.Values{}
-	q.Set("name", displayName)
-	return c.BaseURL + "/challenge?" + q.Encode()
-}
-
-func (c *Client) RequestChallenge(ctx context.Context, displayName string) (string, error) {
-	body, status, err := c.get(ctx, c.ChallengeURL(displayName))
-	if err != nil {
-		return "", err
-	}
-	if status != http.StatusOK {
-		return "", fmt.Errorf("challenge: status %d: %s", status, body)
-	}
-	return strings.TrimSpace(body), nil
-}
-
 type SaveParams struct {
-	Score int64
-	JWT   string
+	Data        *savedata.Data
+	JWT         string
+	DisplayName string
 }
 
-func (c *Client) SaveURL(p SaveParams) string {
-	sig := auth.SignHex(c.SaveSecret, auth.SaveSigMessage(p.Score))
+func (c *Client) SaveURL(p SaveParams) (string, error) {
+	if p.Data == nil {
+		return "", fmt.Errorf("vrcclient: SaveParams.Data is nil")
+	}
+	body, err := savedata.Marshal(p.Data)
+	if err != nil {
+		return "", fmt.Errorf("marshal save data: %w", err)
+	}
+	sig := auth.SignHex(c.SaveSecret, body, []byte(p.DisplayName))
 	q := url.Values{}
-	q.Set("score", strconv.FormatInt(p.Score, 10))
+	q.Set("data", string(body))
+	q.Set("display_name", p.DisplayName)
 	q.Set("jwt", p.JWT)
 	q.Set("sig", sig)
-	return c.BaseURL + "/save?" + q.Encode()
+	return c.BaseURL + "/save?" + q.Encode(), nil
 }
 
 func (c *Client) Save(ctx context.Context, p SaveParams) (string, error) {
-	body, status, err := c.get(ctx, c.SaveURL(p))
+	u, err := c.SaveURL(p)
+	if err != nil {
+		return "", err
+	}
+	body, status, err := c.get(ctx, u)
 	if err != nil {
 		return "", err
 	}
@@ -76,39 +68,49 @@ func (c *Client) Save(ctx context.Context, p SaveParams) (string, error) {
 }
 
 type LoadParams struct {
-	JWT string
+	JWT         string
+	DisplayName string
 }
 
 func (c *Client) LoadURL(p LoadParams) string {
+	sig := auth.SignHex(c.LoadSecret, []byte(p.DisplayName))
 	q := url.Values{}
+	q.Set("display_name", p.DisplayName)
+	q.Set("sig", sig)
 	q.Set("jwt", p.JWT)
 	return c.BaseURL + "/load?" + q.Encode()
 }
 
-// Load returns the score string. Returns ("", nil) when there is no save yet.
-func (c *Client) Load(ctx context.Context, p LoadParams) (string, error) {
+func (c *Client) Load(ctx context.Context, p LoadParams) (*savedata.Data, error) {
 	body, status, err := c.get(ctx, c.LoadURL(p))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if status == http.StatusNotFound {
-		return "", nil
+		return nil, nil
 	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("load: status %d: %s", status, body)
+		return nil, fmt.Errorf("load: status %d: %s", status, body)
 	}
 
 	var resp struct {
-		Score int64  `json:"score"`
-		Sig   string `json:"sig"`
+		Data json.RawMessage `json:"data"`
+		Sig  string          `json:"sig"`
 	}
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return "", fmt.Errorf("load: invalid response: %w", err)
+		return nil, fmt.Errorf("load: invalid response: %w", err)
 	}
-	if !auth.VerifyHex(c.LoadSecret, auth.LoadSigMessage(resp.Score), resp.Sig) {
-		return "", fmt.Errorf("load: response sig invalid (MITM?)")
+	if len(resp.Data) == 0 || resp.Sig == "" {
+		return nil, fmt.Errorf("load: response missing data or sig")
 	}
-	return strconv.FormatInt(resp.Score, 10), nil
+	if !auth.VerifyHex(c.LoadSecret, resp.Sig, resp.Data) {
+		return nil, fmt.Errorf("load: response sig invalid (MITM?)")
+	}
+	d, err := savedata.Unmarshal(resp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("load: parse data: %w", err)
+	}
+	return d, nil
 }
 
 func (c *Client) get(ctx context.Context, u string) (string, int, error) {

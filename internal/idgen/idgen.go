@@ -1,5 +1,3 @@
-// Package idgen provides UUID generation as an injectable dependency so tests
-// can use deterministic IDs.
 package idgen
 
 import (
@@ -13,13 +11,10 @@ type Generator interface {
 	NewUUID() string
 }
 
-// Real produces RFC4122 v4 UUIDs.
 type Real struct{}
 
 func (Real) NewUUID() string { return uuid.NewString() }
 
-// Sequential returns deterministic IDs for tests, e.g. "ticket-0001",
-// "ticket-0002", ...
 type Sequential struct {
 	Prefix string
 	n      atomic.Uint64
