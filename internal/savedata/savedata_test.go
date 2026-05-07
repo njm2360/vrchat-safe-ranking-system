@@ -7,12 +7,12 @@ import (
 )
 
 func TestMarshalCanonical(t *testing.T) {
-	got, err := savedata.Marshal(&savedata.Data{Score: 1234})
+	got, err := savedata.Marshal(&savedata.Data{Score: 1234, GeneratedAt: 9999})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != `{"score":1234}` {
-		t.Errorf("Marshal = %q, want %q", string(got), `{"score":1234}`)
+	if string(got) != `{"score":1234,"generated_at":9999}` {
+		t.Errorf("Marshal = %q, want %q", string(got), `{"score":1234,"generated_at":9999}`)
 	}
 }
 

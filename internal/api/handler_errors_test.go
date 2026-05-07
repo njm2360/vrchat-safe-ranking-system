@@ -14,7 +14,7 @@ func TestSave_DBError(t *testing.T) {
 	saves := &fakeSaveStore{saveErr: errBoom}
 	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
 	h := newServer(saves, jwt, fakeIDGen{})
-	rr, _ := get(t, h, saveURL(1, "alice", "any.jwt.value", ""))
+	rr, _ := get(t, h, saveURL(1, 1000, "alice", "any.jwt.value", ""))
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rr.Code)
 	}

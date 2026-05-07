@@ -40,16 +40,11 @@ func TestSaveAppendsHistoryAndUpdatesLatest(t *testing.T) {
 	ctx := context.Background()
 	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
 
-	id1, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "jti-1")
-	if err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 1000}, "jti-1"); err != nil {
 		t.Fatal(err)
 	}
-	id2, err := d.Save(ctx, "alice", &savedata.Data{Score: 200}, "jti-1")
-	if err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: 1001}, "jti-1"); err != nil {
 		t.Fatal(err)
-	}
-	if id2 <= id1 {
-		t.Errorf("history ids not monotonic: %d, %d", id1, id2)
 	}
 
 	got, err := d.GetLatestSave(ctx, "alice")
@@ -67,10 +62,10 @@ func TestSaveWithoutJWTExcludedFromRanking(t *testing.T) {
 	ctx := context.Background()
 	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
 
-	if _, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "jti-1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 1000}, "jti-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Save(ctx, "anon", &savedata.Data{Score: 9999}, ""); err != nil {
+	if err := d.Save(ctx, "anon", &savedata.Data{Score: 9999, GeneratedAt: 1001}, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,8 +84,8 @@ func TestRankingFiltersBlacklistedJTI(t *testing.T) {
 	seedIssuedToken(t, d, "jti-good", "119548486276710400", "alice")
 	seedIssuedToken(t, d, "jti-bad", "119548486276710401", "bob")
 
-	_, _ = d.Save(ctx, "alice", &savedata.Data{Score: 100}, "jti-good")
-	_, _ = d.Save(ctx, "bob", &savedata.Data{Score: 999}, "jti-bad")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 1000}, "jti-good")
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: 1001}, "jti-bad")
 
 	if err := d.BlacklistJTI(ctx, "jti-bad", "test"); err != nil {
 		t.Fatal(err)
@@ -108,8 +103,8 @@ func TestRankingFiltersBannedDiscordID(t *testing.T) {
 	seedIssuedToken(t, d, "jti-a", "good-id", "alice")
 	seedIssuedToken(t, d, "jti-b", "banned-id", "bob")
 
-	_, _ = d.Save(ctx, "alice", &savedata.Data{Score: 100}, "jti-a")
-	_, _ = d.Save(ctx, "bob", &savedata.Data{Score: 999}, "jti-b")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 1000}, "jti-a")
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: 1001}, "jti-b")
 
 	if err := d.BanDiscordID(ctx, "banned-id", "test"); err != nil {
 		t.Fatal(err)
@@ -130,11 +125,11 @@ func TestRankingOrdering(t *testing.T) {
 	seedIssuedToken(t, d, "j2", "d2", "bob")
 	seedIssuedToken(t, d, "j3", "d3", "charlie")
 
-	_, _ = d.Save(ctx, "alice", &savedata.Data{Score: 500}, "j1")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 500, GeneratedAt: 1000}, "j1")
 	fc.Advance(time.Second)
-	_, _ = d.Save(ctx, "bob", &savedata.Data{Score: 1000}, "j2")
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 1000, GeneratedAt: 1001}, "j2")
 	fc.Advance(time.Second)
-	_, _ = d.Save(ctx, "charlie", &savedata.Data{Score: 1000}, "j3") // tie with bob, but later
+	_ = d.Save(ctx, "charlie", &savedata.Data{Score: 1000, GeneratedAt: 1002}, "j3") // tie with bob, but later
 
 	rows, _ := d.Ranking(ctx, 10)
 	if len(rows) != 3 {
@@ -166,5 +161,33 @@ func TestGetLatestSaveNotFound(t *testing.T) {
 	d := newTestDB(t, nil)
 	if _, err := d.GetLatestSave(context.Background(), "nobody"); !errors.Is(err, db.ErrSaveNotFound) {
 		t.Errorf("err = %v, want ErrSaveNotFound", err)
+	}
+}
+
+func TestSave_DuplicateGeneratedAt(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
+
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 5000}, "jti-1"); err != nil {
+		t.Fatal(err)
+	}
+	err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: 5000}, "jti-1")
+	if !errors.Is(err, db.ErrDuplicateSave) {
+		t.Errorf("err = %v, want ErrDuplicateSave", err)
+	}
+}
+
+func TestSave_SameGeneratedAt_DifferentUser(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	seedIssuedToken(t, d, "jti-a", "uid-a", "alice")
+	seedIssuedToken(t, d, "jti-b", "uid-b", "bob")
+
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: 5000}, "jti-a"); err != nil {
+		t.Errorf("alice save: %v", err)
+	}
+	if err := d.Save(ctx, "bob", &savedata.Data{Score: 200, GeneratedAt: 5000}, "jti-b"); err != nil {
+		t.Errorf("bob save with same generated_at should succeed: %v", err)
 	}
 }

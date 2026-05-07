@@ -1,11 +1,13 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
+	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
@@ -35,7 +37,13 @@ func (s *Server) handleSave(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "invalid data json")
 	}
-	if _, err := s.saves.Save(c.Request().Context(), claims.DisplayName, data, claims.JTI); err != nil {
+	if data.GeneratedAt == 0 {
+		return c.String(http.StatusBadRequest, "missing generated_at")
+	}
+	if err := s.saves.Save(c.Request().Context(), claims.DisplayName, data, claims.JTI); err != nil {
+		if errors.Is(err, db.ErrDuplicateSave) {
+			return c.String(http.StatusConflict, "duplicate save")
+		}
 		s.log.Error("save", "err", err)
 		return c.String(http.StatusInternalServerError, "internal error")
 	}

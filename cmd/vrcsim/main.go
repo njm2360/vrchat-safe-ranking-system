@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/config"
@@ -50,8 +51,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `vrcsim — VRChat Udon client simulator
 
 Subcommands:
-  save --score <int> --jwt <JWT> --display-name <name> [--print-url]
-      Sign and send /save.
+  save --score <int> --jwt <JWT> --display-name <name> [--generated-at <unix>] [--print-url]
+      Sign and send /save. --generated-at defaults to current Unix time.
 
   load --jwt <JWT> --display-name <name> [--print-url]
       Send /load. Prints the score (empty for no save).
@@ -73,6 +74,7 @@ func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 	score := fs.Int64("score", 0, "score (int)")
 	jwt := fs.String("jwt", "", "JWT. Prefix with @ to read from file.")
 	displayName := fs.String("display-name", "", "VRChat display name (must match JWT claim)")
+	generatedAt := fs.Int64("generated-at", time.Now().Unix(), "generated_at (Unix秒、省略で現在時刻)")
 	printURL := fs.Bool("print-url", false, "print URL only, do not request")
 	_ = fs.Parse(args)
 	if *jwt == "" {
@@ -83,7 +85,7 @@ func runSave(ctx context.Context, client *vrcclient.Client, args []string) {
 	}
 	jwtStr, err := readMaybeFile(*jwt)
 	exitIf(err)
-	p := vrcclient.SaveParams{Data: &savedata.Data{Score: *score}, JWT: jwtStr, DisplayName: *displayName}
+	p := vrcclient.SaveParams{Data: &savedata.Data{Score: *score, GeneratedAt: *generatedAt}, JWT: jwtStr, DisplayName: *displayName}
 	if *printURL {
 		u, err := client.SaveURL(p)
 		exitIf(err)
@@ -147,7 +149,7 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	fmt.Println("   JWT:", res.JWT)
 
 	fmt.Println("=> save")
-	body, err := client.Save(ctx, vrcclient.SaveParams{Data: &savedata.Data{Score: *score}, JWT: res.JWT})
+	body, err := client.Save(ctx, vrcclient.SaveParams{Data: &savedata.Data{Score: *score, GeneratedAt: time.Now().Unix()}, JWT: res.JWT})
 	exitIf(err)
 	fmt.Println("   ", body)
 

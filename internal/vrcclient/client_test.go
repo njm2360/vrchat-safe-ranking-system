@@ -21,7 +21,7 @@ const (
 
 func TestSaveURLIncludesValidHMAC(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u, err := c.SaveURL(vrcclient.SaveParams{Data: &savedata.Data{Score: 1234}, JWT: "tok", DisplayName: "testuser"})
+	u, err := c.SaveURL(vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: 9999}, JWT: "tok", DisplayName: "testuser"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestSaveURLIncludesValidHMAC(t *testing.T) {
 	if q.Get("jwt") != "tok" {
 		t.Errorf("jwt param = %q", q.Get("jwt"))
 	}
-	if q.Get("data") != `{"score":1234}` {
+	if q.Get("data") != `{"score":1234,"generated_at":9999}` {
 		t.Errorf("data = %q, want canonical JSON", q.Get("data"))
 	}
 	if q.Get("display_name") != "testuser" {

@@ -25,7 +25,7 @@ func loadURL(displayName, jwt string) string {
 }
 
 func TestLoad_Success(t *testing.T) {
-	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1234}}}
+	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1234, GeneratedAt: 9999}}}
 	jwtV := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
 	h := newServer(saves, jwtV, fakeIDGen{})
 
@@ -41,7 +41,7 @@ func TestLoad_Success(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		t.Fatalf("unmarshal: %v (body=%q)", err, body)
 	}
-	if string(resp.Data) != `{"score":1234}` {
+	if string(resp.Data) != `{"score":1234,"generated_at":9999}` {
 		t.Errorf("data = %q, want canonical JSON", string(resp.Data))
 	}
 	if !auth.VerifyHex([]byte("load-secret"), resp.Sig, resp.Data) {
