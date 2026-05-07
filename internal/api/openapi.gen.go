@@ -7,24 +7,6 @@ import (
 	"time"
 )
 
-// Defines values for PostAuthPortalFormdataBodyAction.
-const (
-	Register   PostAuthPortalFormdataBodyAction = "register"
-	Unregister PostAuthPortalFormdataBodyAction = "unregister"
-)
-
-// Valid indicates whether the value is a known member of the PostAuthPortalFormdataBodyAction enum.
-func (e PostAuthPortalFormdataBodyAction) Valid() bool {
-	switch e {
-	case Register:
-		return true
-	case Unregister:
-		return true
-	default:
-		return false
-	}
-}
-
 // LoadResponse defines model for LoadResponse.
 type LoadResponse struct {
 	Data SaveData `json:"data"`
@@ -69,17 +51,11 @@ type GetAuthPortalParams struct {
 	Token string `form:"token" json:"token"`
 }
 
-// PostAuthPortalFormdataBody defines parameters for PostAuthPortal.
-type PostAuthPortalFormdataBody struct {
-	// Action 実行するアクション
-	Action PostAuthPortalFormdataBodyAction `form:"action" json:"action"`
-
+// AuthRegisterFormdataBody defines parameters for AuthRegister.
+type AuthRegisterFormdataBody struct {
 	// Token セッショントークン
 	Token string `form:"token" json:"token"`
 }
-
-// PostAuthPortalFormdataBodyAction defines parameters for PostAuthPortal.
-type PostAuthPortalFormdataBodyAction string
 
 // AuthStartParams defines parameters for AuthStart.
 type AuthStartParams struct {
@@ -87,15 +63,27 @@ type AuthStartParams struct {
 	Name string `form:"name" json:"name"`
 }
 
+// AuthUnregisterFormdataBody defines parameters for AuthUnregister.
+type AuthUnregisterFormdataBody struct {
+	// Token セッショントークン
+	Token string `form:"token" json:"token"`
+}
+
 // LoadDataParams defines parameters for LoadData.
 type LoadDataParams struct {
 	// Jwt 認証JWT
 	Jwt string `form:"jwt" json:"jwt"`
+
+	// DisplayName ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+	DisplayName string `form:"display_name" json:"display_name"`
+
+	// Sig HMAC-SHA256(display_name)の署名
+	Sig string `form:"sig" json:"sig"`
 }
 
 // GetRankingParams defines parameters for GetRanking.
 type GetRankingParams struct {
-	// Limit 取得件数（デフォルト 10）
+	// Limit 取得件数(デフォルト 10)
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
@@ -104,12 +92,18 @@ type SaveDataParams struct {
 	// Jwt 認証JWT
 	Jwt string `form:"jwt" json:"jwt"`
 
-	// Data セーブデータ
+	// DisplayName ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+	DisplayName string `form:"display_name" json:"display_name"`
+
+	// Data セーブデータ(JSON)
 	Data string `form:"data" json:"data"`
 
-	// Sig dataのHMAC-SHA256署名
+	// Sig HMAC-SHA256(data, display_name)の署名
 	Sig string `form:"sig" json:"sig"`
 }
 
-// PostAuthPortalFormdataRequestBody defines body for PostAuthPortal for application/x-www-form-urlencoded ContentType.
-type PostAuthPortalFormdataRequestBody PostAuthPortalFormdataBody
+// AuthRegisterFormdataRequestBody defines body for AuthRegister for application/x-www-form-urlencoded ContentType.
+type AuthRegisterFormdataRequestBody AuthRegisterFormdataBody
+
+// AuthUnregisterFormdataRequestBody defines body for AuthUnregister for application/x-www-form-urlencoded ContentType.
+type AuthUnregisterFormdataRequestBody AuthUnregisterFormdataBody

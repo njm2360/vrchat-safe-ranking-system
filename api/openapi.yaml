@@ -11,7 +11,7 @@ paths:
     get:
       operationId: SaveData
       summary: セーブデータを保存する
-      description: HMAC-SHA256 署名付きのセーブデータをサーバーに記録します。
+      description: HMAC-SHA256署名付きのセーブデータをサーバーに記録します。
       parameters:
         - name: jwt
           in: query
@@ -24,19 +24,19 @@ paths:
           required: true
           schema:
             type: string
-          description: VRChat 表示名（JWT の display_name クレームと一致する必要あり）
+          description: ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
         - name: data
           in: query
           required: true
           schema:
             type: string
-          description: セーブデータ（JSON）
+          description: セーブデータ(JSON)
         - name: sig
           in: query
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(data, display_name) の署名
+          description: HMAC-SHA256(data, display_name)の署名
       responses:
         "200":
           description: 保存成功
@@ -46,9 +46,9 @@ paths:
                 type: string
                 example: success
         "400":
-          description: パラメータ不正（display_name / data / sig 未指定）、sig 検証失敗、またはデータ形式エラー
+          description: パラメータ不正(display_name / data / sig 未指定)、sig 検証失敗、またはデータ形式エラー
         "401":
-          description: JWT が無効・失効済み、または display_name が JWT と不一致
+          description: JWTが無効・失効済み、またはdisplay_nameがJWTと不一致
         "500":
           description: サーバー内部エラー
 
@@ -69,13 +69,13 @@ paths:
           required: true
           schema:
             type: string
-          description: VRChat 表示名（JWT の display_name クレームと一致する必要あり）
+          description: ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
         - name: sig
           in: query
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(display_name) の署名
+          description: HMAC-SHA256(display_name)の署名
       responses:
         "200":
           description: セーブデータと署名
@@ -84,9 +84,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoadResponse"
         "400":
-          description: パラメータ不正（display_name / sig 未指定）または sig 検証失敗
+          description: パラメータ不正(display_name / sig 未指定)またはsig検証失敗
         "401":
-          description: JWT が無効・失効済み、または display_name が JWT と不一致
+          description: JWTが無効・失効済み、または display_nameがJWTと不一致
         "404":
           description: セーブデータが存在しない
         "500":
@@ -105,7 +105,7 @@ paths:
             default: 10
             minimum: 1
             maximum: 1000
-          description: 取得件数（デフォルト 10）
+          description: 取得件数(デフォルト 10)
       responses:
         "200":
           description: ランキング一覧
@@ -197,7 +197,7 @@ paths:
       summary: 登録を実行する
       description: |
         セッショントークンを消費して VRChat 表示名とアカウントを紐付けます。
-        既存の登録がある場合は JWT を再発行します（旧 JWT は失効）。
+        既存の登録がある場合は JWT を再発行します(旧 JWT は失効)。
         成功すると JWT を含む結果 HTML ページを返します。
       requestBody:
         required: true
@@ -212,7 +212,7 @@ paths:
                   description: セッショントークン
       responses:
         "200":
-          description: 結果HTMLページ（登録完了 / トークン再発行）
+          description: 結果HTMLページ(登録完了 / トークン再発行)
           content:
             text/html:
               schema:
