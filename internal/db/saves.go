@@ -4,12 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
-var ErrSaveNotFound = errors.New("save not found")
+var (
+	ErrSaveNotFound  = errors.New("save not found")
+	ErrDuplicateSave = errors.New("save with this generated_at already exists")
+)
 
 type SaveEntry struct {
 	ID          int64
@@ -18,23 +22,26 @@ type SaveEntry struct {
 	CreatedAt   time.Time
 }
 
-func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data, jti string) (historyID int64, err error) {
+func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data, jti string) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer tx.Rollback()
 
 	now := db.nowTS()
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO save_history (display_name, score, created_at) VALUES (?, ?, ?)`,
-		displayName, data.Score, now)
+		`INSERT INTO save_history (display_name, score, generated_at, created_at) VALUES (?, ?, ?, ?)`,
+		displayName, data.Score, data.GeneratedAt, now)
 	if err != nil {
-		return 0, err
+		if strings.Contains(err.Error(), "save_history.generated_at") {
+			return ErrDuplicateSave
+		}
+		return err
 	}
-	historyID, err = res.LastInsertId()
+	historyID, err := res.LastInsertId()
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	var j sql.NullString
@@ -42,7 +49,7 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 		j = sql.NullString{String: jti, Valid: true}
 	}
 
-	_, err = tx.ExecContext(ctx,
+	if _, err = tx.ExecContext(ctx,
 		`INSERT INTO latest_saves (display_name, score, history_id, jti, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(display_name) DO UPDATE SET
@@ -50,15 +57,11 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 		   history_id = excluded.history_id,
 		   jti = excluded.jti,
 		   updated_at = excluded.updated_at`,
-		displayName, data.Score, historyID, j, now)
-	if err != nil {
-		return 0, err
+		displayName, data.Score, historyID, j, now); err != nil {
+		return err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return historyID, nil
+	return tx.Commit()
 }
 
 func (db *DB) GetLatestSave(ctx context.Context, displayName string) (*SaveEntry, error) {

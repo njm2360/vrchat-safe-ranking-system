@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS save_history (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     display_name TEXT NOT NULL,
     score        INTEGER NOT NULL,
-    created_at   TIMESTAMP NOT NULL
+    generated_at INTEGER NOT NULL,
+    created_at   TIMESTAMP NOT NULL,
+    UNIQUE(display_name, generated_at)
 );
 CREATE INDEX IF NOT EXISTS idx_save_history_dn ON save_history(display_name, id DESC);
 

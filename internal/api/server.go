@@ -25,7 +25,7 @@ import (
 
 // SaveStore is the subset of *db.DB the save/load/ranking handlers need.
 type SaveStore interface {
-	Save(ctx context.Context, displayName string, data *savedata.Data, jti string) (historyID int64, err error)
+	Save(ctx context.Context, displayName string, data *savedata.Data, jti string) error
 	GetLatestSave(ctx context.Context, displayName string) (*db.SaveEntry, error)
 	Ranking(ctx context.Context, limit int) ([]db.RankingRow, error)
 }

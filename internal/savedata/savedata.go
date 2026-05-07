@@ -5,7 +5,8 @@ import (
 )
 
 type Data struct {
-	Score int64 `json:"score"`
+	Score       int64 `json:"score"`
+	GeneratedAt int64 `json:"generated_at"`
 }
 
 func Marshal(d *Data) ([]byte, error) {

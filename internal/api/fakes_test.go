@@ -14,7 +14,6 @@ import (
 type fakeSaveStore struct {
 	saveCalls  []saveCall
 	saveErr    error
-	saveID     int64
 	latestRet  *db.SaveEntry
 	latestErr  error
 	rankingRet []db.RankingRow
@@ -27,9 +26,9 @@ type saveCall struct {
 	JTI         string
 }
 
-func (f *fakeSaveStore) Save(_ context.Context, dn string, data *savedata.Data, jti string) (int64, error) {
+func (f *fakeSaveStore) Save(_ context.Context, dn string, data *savedata.Data, jti string) error {
 	f.saveCalls = append(f.saveCalls, saveCall{dn, data, jti})
-	return f.saveID, f.saveErr
+	return f.saveErr
 }
 func (f *fakeSaveStore) GetLatestSave(_ context.Context, _ string) (*db.SaveEntry, error) {
 	return f.latestRet, f.latestErr
