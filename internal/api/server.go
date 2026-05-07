@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	e.POST("/auth/unregister", s.handleAuthUnregister)
 	if s.cfg.MockOAuth {
 		e.GET("/auth/mock-login", s.handleAuthMockLogin)
+		e.POST("/auth/mock-login", s.handleAuthMockLoginPost)
 	}
 
 	e.GET("/openapi.yaml", handleOpenapiSpec)

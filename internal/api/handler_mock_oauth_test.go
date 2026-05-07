@@ -9,8 +9,8 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
 )
 
-// Mock OAuth flow: /auth/start (mock) → 302 to /auth/mock-login → 302 to
-// /auth/callback → 303 to /auth/portal (renders portal) → POST to commit.
+// Mock OAuth flow: /auth/start (mock) → 302 to /auth/mock-login (renders form) →
+// POST /auth/mock-login → 302 to /auth/callback → 303 to /auth/portal → POST to commit.
 
 func TestMockOAuth_StartRedirectsToMockLogin_ExplicitOverrides(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
@@ -84,11 +84,31 @@ func mustQuery(t *testing.T, raw, key string) string {
 	return u.Query().Get(key)
 }
 
-func TestMockOAuth_MockLoginRedirectsToCallback(t *testing.T) {
+func TestMockOAuth_MockLoginRendersForm(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
-	rr, _ := get(t, h, "/auth/mock-login?state=anystate&discord_id=123456&username=alice.dev")
+	rr, body := get(t, h, "/auth/mock-login?state=anystate&discord_id=123456&username=alice.dev")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(body, `value="123456"`) {
+		t.Errorf("body missing pre-filled discord_id; body=%q", body)
+	}
+	if !strings.Contains(body, `name="state"`) {
+		t.Errorf("body missing state field; body=%q", body)
+	}
+}
+
+func TestMockOAuth_MockLoginPostRedirectsToCallback(t *testing.T) {
+	regSvc, d, _, _ := newRegSvc(t)
+	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
+
+	rr, _ := postForm(t, h, "/auth/mock-login", url.Values{
+		"state":      {"anystate"},
+		"discord_id": {"123456"},
+		"username":   {"alice.dev"},
+	})
 	if rr.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rr.Code)
 	}
@@ -115,9 +135,19 @@ func TestMockOAuth_FullFlow_Register(t *testing.T) {
 	}
 	loc1 := rr1.Header().Get("Location")
 
-	rr2, _ := get(t, h, loc1)
+	rr2get, _ := get(t, h, loc1)
+	if rr2get.Code != http.StatusOK {
+		t.Fatalf("mock-login GET status = %d, want 200", rr2get.Code)
+	}
+	parsed1, _ := url.Parse(loc1)
+	q1 := parsed1.Query()
+	rr2, _ := postForm(t, h, "/auth/mock-login", url.Values{
+		"state":      {q1.Get("state")},
+		"discord_id": {q1.Get("discord_id")},
+		"username":   {q1.Get("username")},
+	})
 	if rr2.Code != http.StatusFound {
-		t.Fatalf("mock-login status = %d", rr2.Code)
+		t.Fatalf("mock-login POST status = %d, want 302", rr2.Code)
 	}
 	loc2 := rr2.Header().Get("Location")
 

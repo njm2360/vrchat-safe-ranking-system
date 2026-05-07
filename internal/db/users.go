@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -98,6 +99,9 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		   current_jti  = NULL,
 		   updated_at   = excluded.updated_at`,
 		discordID, displayName, now, now); err != nil {
+		if strings.Contains(err.Error(), "users.display_name") {
+			return ErrDisplayNameTaken
+		}
 		return err
 	}
 

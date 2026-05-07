@@ -16,9 +16,10 @@ import (
 var templateFS embed.FS
 
 var (
-	tplToken   = template.Must(template.ParseFS(templateFS, "templates/token.html"))
-	tplMessage = template.Must(template.ParseFS(templateFS, "templates/message.html"))
-	tplPortal  = template.Must(template.ParseFS(templateFS, "templates/portal.html"))
+	tplToken     = template.Must(template.ParseFS(templateFS, "templates/token.html"))
+	tplMessage   = template.Must(template.ParseFS(templateFS, "templates/message.html"))
+	tplPortal    = template.Must(template.ParseFS(templateFS, "templates/portal.html"))
+	tplMockLogin = template.Must(template.ParseFS(templateFS, "templates/mock_login.html"))
 )
 
 type portalAction struct {
@@ -157,4 +158,18 @@ func (s *Server) renderError(c echo.Context, status int, body string) error {
 		return err
 	}
 	return c.HTMLBlob(status, buf.Bytes())
+}
+
+type mockLoginView struct {
+	State     string
+	DiscordID string
+	Username  string
+}
+
+func (s *Server) renderMockLogin(c echo.Context, state, discordID, username string) error {
+	var buf bytes.Buffer
+	if err := tplMockLogin.Execute(&buf, mockLoginView{state, discordID, username}); err != nil {
+		return err
+	}
+	return c.HTMLBlob(http.StatusOK, buf.Bytes())
 }

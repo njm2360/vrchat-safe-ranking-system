@@ -132,7 +132,7 @@ func TestUpsertUserAndIssue_ReissueUpdatesLatestSavesJTI(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
 		t.Fatal(err)
 	}
 
