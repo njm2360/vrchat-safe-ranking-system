@@ -125,6 +125,7 @@
     </div>
     {{end}}
 
+    {{if not .NameConflict}}
     <div class="section-card">
       <div class="section-label">登録状況</div>
       <p class="text-muted mb-1" style="font-size:0.82rem">VRChatユーザー名</p>
@@ -151,6 +152,7 @@
       {{end}}
     </div>
 
+    {{if or .RegisterAction.Action .UnregisterAction.Action}}
     <div class="section-card">
       <div class="section-label">操作</div>
 
@@ -185,6 +187,8 @@
       {{end}}{{end}}
 
     </div>
+    {{end}}
+    {{end}}
 
   </div>
 

@@ -50,15 +50,28 @@ func validMockUsername(name string) bool {
 	return !strings.ContainsRune(name, '|')
 }
 
-// handleAuthMockLogin stands in for the Discord authorize page in mock
-// mode. It immediately redirects the browser to /auth/callback, smuggling
-// the (discord_id, username) pair through the OAuth `code` field as
-// "<id>|<username>" — oauth.Fake (EchoCode=true) decodes this on the
-// other side. Only registered when Config.MockOAuth is true.
+// handleAuthMockLogin stands in for the Discord authorize page in mock mode.
+// It renders an interactive form so the user can confirm or change the Discord
+// ID before proceeding. Only registered when Config.MockOAuth is true.
 func (s *Server) handleAuthMockLogin(c echo.Context) error {
 	state := strings.TrimSpace(c.QueryParam("state"))
-	discordID := strings.TrimSpace(c.QueryParam("discord_id"))
-	username := strings.TrimSpace(c.QueryParam("username"))
+	if state == "" {
+		return c.String(http.StatusBadRequest, "mock-login: missing state")
+	}
+	return s.renderMockLogin(c,
+		state,
+		strings.TrimSpace(c.QueryParam("discord_id")),
+		strings.TrimSpace(c.QueryParam("username")),
+	)
+}
+
+// handleAuthMockLoginPost processes the mock login form submission. It encodes
+// the (discord_id, username) pair into the OAuth code field and redirects to
+// /auth/callback — matching what a real Discord authorize redirect would do.
+func (s *Server) handleAuthMockLoginPost(c echo.Context) error {
+	state := strings.TrimSpace(c.FormValue("state"))
+	discordID := strings.TrimSpace(c.FormValue("discord_id"))
+	username := strings.TrimSpace(c.FormValue("username"))
 	if state == "" || !validMockDiscordID(discordID) || !validMockUsername(username) {
 		return c.String(http.StatusBadRequest, "mock-login: missing or invalid state/discord_id/username")
 	}
