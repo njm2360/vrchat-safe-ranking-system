@@ -112,7 +112,29 @@ func (s *Server) Handler() http.Handler {
 		}
 	}
 
-	e.Use(middleware.RequestLogger())
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogMethod:    true,
+		LogURI:       true,
+		LogStatus:    true,
+		LogError:     true,
+		LogUserAgent: true,
+		LogRemoteIP:  true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			path := c.Request().URL.Path
+			attrs := []slog.Attr{
+				slog.String("method", v.Method),
+				slog.String("path", path),
+				slog.Int("status", v.Status),
+				slog.String("user_agent", v.UserAgent),
+				slog.String("remote_ip", v.RemoteIP),
+			}
+			if v.Error != nil {
+				attrs = append(attrs, slog.String("error", v.Error.Error()))
+			}
+			s.log.LogAttrs(c.Request().Context(), slog.LevelInfo, "REQUEST", attrs...)
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 
 	e.GET("/save", s.handleSave, s.requireJWT)
