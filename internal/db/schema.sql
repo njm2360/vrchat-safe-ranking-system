@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS save_history (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     display_name TEXT NOT NULL,
     score        INTEGER NOT NULL,
-    generated_at INTEGER NOT NULL,
+    generated_at TIMESTAMP NOT NULL,
     created_at   TIMESTAMP NOT NULL,
     UNIQUE(display_name, generated_at)
 );

@@ -32,7 +32,7 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 	now := db.nowTS()
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO save_history (display_name, score, generated_at, created_at) VALUES (?, ?, ?, ?)`,
-		displayName, data.Score, data.GeneratedAt, now)
+		displayName, data.Score, data.GeneratedAt.UTC().Format(time.RFC3339), now)
 	if err != nil {
 		if strings.Contains(err.Error(), "save_history.generated_at") {
 			return ErrDuplicateSave

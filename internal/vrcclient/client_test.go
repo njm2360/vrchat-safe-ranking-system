@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
@@ -21,7 +22,7 @@ const (
 
 func TestSaveURLIncludesValidHMAC(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret))
-	u, err := c.SaveURL(vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: 9999}, JWT: "tok", DisplayName: "testuser"})
+	u, err := c.SaveURL(vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: time.Unix(9999, 0).UTC()}, JWT: "tok", DisplayName: "testuser"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func TestSaveURLIncludesValidHMAC(t *testing.T) {
 	if q.Get("jwt") != "tok" {
 		t.Errorf("jwt param = %q", q.Get("jwt"))
 	}
-	if q.Get("data") != `{"score":1234,"generated_at":9999}` {
+	if q.Get("data") != `{"score":1234,"generated_at":"1970-01-01T02:46:39Z"}` {
 		t.Errorf("data = %q, want canonical JSON", q.Get("data"))
 	}
 	if q.Get("display_name") != "testuser" {
@@ -148,7 +149,7 @@ func TestLoadReturnsNilOn404(t *testing.T) {
 }
 
 func TestLoadAgainstFakeServer(t *testing.T) {
-	dataBytes := []byte(`{"score":9999}`)
+	dataBytes := []byte(`{"score":9999,"generated_at":"1970-01-01T00:00:00Z"}`)
 	sig := auth.SignHex([]byte(loadSecret), dataBytes)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -169,10 +170,10 @@ func TestLoadAgainstFakeServer(t *testing.T) {
 func TestLoadRejectsInvalidSig(t *testing.T) {
 	// MITM: server returns a tampered data field while reusing a sig
 	// that was generated for a different payload.
-	legit := auth.SignHex([]byte(loadSecret), []byte(`{"score":100}`))
+	legit := auth.SignHex([]byte(loadSecret), []byte(`{"score":100,"generated_at":"1970-01-01T00:00:00Z"}`))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"data":{"score":99999},"sig":"` + legit + `"}`))
+		w.Write([]byte(`{"data":{"score":99999,"generated_at":"1970-01-01T00:00:00Z"},"sig":"` + legit + `"}`))
 	}))
 	defer srv.Close()
 

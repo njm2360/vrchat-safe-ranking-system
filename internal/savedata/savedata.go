@@ -2,11 +2,12 @@ package savedata
 
 import (
 	"encoding/json"
+	"time"
 )
 
 type Data struct {
-	Score       int64 `json:"score"`
-	GeneratedAt int64 `json:"generated_at"`
+	Score       int64     `json:"score"`
+	GeneratedAt time.Time `json:"generated_at"`
 }
 
 func Marshal(d *Data) ([]byte, error) {

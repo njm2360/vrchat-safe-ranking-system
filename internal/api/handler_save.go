@@ -37,7 +37,7 @@ func (s *Server) handleSave(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "invalid data json")
 	}
-	if data.GeneratedAt == 0 {
+	if data.GeneratedAt.IsZero() {
 		return c.String(http.StatusBadRequest, "missing generated_at")
 	}
 	if err := s.saves.Save(c.Request().Context(), claims.DisplayName, data, claims.JTI); err != nil {

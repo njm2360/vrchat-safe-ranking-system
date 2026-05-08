@@ -194,7 +194,7 @@ func TestE2E_HappyPath(t *testing.T) {
 	h := newHarness(t)
 	jwt := h.register("discord-1", "alice")
 
-	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: 1000}, JWT: jwt, DisplayName: "alice"})
+	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: time.Unix(1000, 0).UTC()}, JWT: jwt, DisplayName: "alice"})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -220,10 +220,10 @@ func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 	h := newHarness(t)
 
 	jwt1 := h.register("discord-1", "alice")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 100, GeneratedAt: 1000}, JWT: jwt1, DisplayName: "alice"})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, JWT: jwt1, DisplayName: "alice"})
 
 	jwt2 := h.register("discord-1", "alice2")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 999, GeneratedAt: 1001}, JWT: jwt2, DisplayName: "alice2"})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, JWT: jwt2, DisplayName: "alice2"})
 
 	rows, _ := h.db.Ranking(context.Background(), 10)
 	if len(rows) != 1 {
@@ -237,7 +237,7 @@ func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 func TestE2E_BanHidesUserFromRanking(t *testing.T) {
 	h := newHarness(t)
 	jwt := h.register("discord-1", "alice")
-	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: 1000}, JWT: jwt, DisplayName: "alice"})
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: time.Unix(1000, 0).UTC()}, JWT: jwt, DisplayName: "alice"})
 
 	if err := h.db.BanDiscordID(context.Background(), "discord-1", "test"); err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestE2E_BannedUserCannotRegister(t *testing.T) {
 func TestE2E_SaveWithoutJWT_Rejected(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 9999, GeneratedAt: 1000}, DisplayName: "alice"})
+	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 9999, GeneratedAt: time.Unix(1000, 0).UTC()}, DisplayName: "alice"})
 	if err == nil {
 		t.Fatal("expected error for save without jwt, got nil")
 	}
