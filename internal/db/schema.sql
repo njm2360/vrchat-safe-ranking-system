@@ -51,8 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_save_history_dn ON save_history(display_name, id 
 CREATE TABLE IF NOT EXISTS latest_saves (
     display_name TEXT PRIMARY KEY,
     score        INTEGER NOT NULL,
-    history_id   INTEGER NOT NULL REFERENCES save_history(id),
-    jti          TEXT NOT NULL REFERENCES issued_tokens(jti),
+    save_id      INTEGER NOT NULL REFERENCES save_history(id),
     updated_at   TIMESTAMP NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_latest_saves_score ON latest_saves(score DESC);

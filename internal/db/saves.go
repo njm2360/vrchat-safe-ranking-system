@@ -40,20 +40,19 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 		}
 		return err
 	}
-	historyID, err := res.LastInsertId()
+	saveID, err := res.LastInsertId()
 	if err != nil {
 		return err
 	}
 
 	if _, err = tx.ExecContext(ctx,
-		`INSERT INTO latest_saves (display_name, score, history_id, jti, updated_at)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO latest_saves (display_name, score, save_id, updated_at)
+		 VALUES (?, ?, ?, ?)
 		 ON CONFLICT(display_name) DO UPDATE SET
 		   score = excluded.score,
-		   history_id = excluded.history_id,
-		   jti = excluded.jti,
+		   save_id = excluded.save_id,
 		   updated_at = excluded.updated_at`,
-		displayName, data.Score, historyID, jti, now); err != nil {
+		displayName, data.Score, saveID, now); err != nil {
 		return err
 	}
 
@@ -97,8 +96,9 @@ func (db *DB) Ranking(ctx context.Context, limit int) ([]RankingRow, error) {
 	}
 	rows, err := db.QueryContext(ctx,
 		`SELECT s.display_name, s.score, s.updated_at FROM latest_saves s
-		 JOIN issued_tokens t ON t.jti = s.jti
-		 LEFT JOIN jti_blacklist b ON b.jti = s.jti
+		 JOIN save_history sh ON sh.id = s.save_id
+		 JOIN issued_tokens t ON t.jti = sh.jti
+		 LEFT JOIN jti_blacklist b ON b.jti = sh.jti
 		 LEFT JOIN discord_bans ban ON ban.discord_id = t.discord_id
 		 LEFT JOIN display_name_bans dnb ON dnb.display_name = s.display_name
 		 WHERE b.jti IS NULL

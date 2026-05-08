@@ -139,16 +139,6 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return err
 	}
 
-	// Keep the existing ranking entry valid under the new token so the user
-	// stays in the ranking without needing to save again.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE latest_saves SET jti = ?
-		 WHERE display_name = ?
-		   AND jti IN (SELECT jti FROM issued_tokens WHERE discord_id = ?)`,
-		newJTI, displayName, discordID); err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 

@@ -123,21 +123,21 @@ func TestUpsertUserAndIssue_ReissueWithoutRename(t *testing.T) {
 	}
 }
 
-// Token reissue (same display_name) must update latest_saves.jti so the user
-// stays in /ranking without needing to save again.
-func TestUpsertUserAndIssue_ReissueUpdatesLatestSavesJTI(t *testing.T) {
+// Token reissue blacklists the old JTI, so the save made under it is no longer
+// valid. The user drops from /ranking until they save again with the new token.
+func TestUpsertUserAndIssue_ReissueDropsFromRanking(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Reissue token — j1 gets blacklisted.
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j2", "jwt2", "reissue"); err != nil {
+	// Reissue token — j1 gets blacklisted, so the save tied to j1 becomes invalid.
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j2", "jwt2", "reissue"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,8 +145,8 @@ func TestUpsertUserAndIssue_ReissueUpdatesLatestSavesJTI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].DisplayName != "alice" {
-		t.Errorf("ranking after reissue = %v, want alice still present", rows)
+	if len(rows) != 0 {
+		t.Errorf("ranking after reissue = %v, want empty until next save", rows)
 	}
 }
 
