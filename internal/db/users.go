@@ -79,18 +79,19 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return ErrDisplayNameTaken
 	}
 
-	// Read existing current_jti for this discord_id (if any)
+	// Snapshot the current state before any mutation.
 	var oldJTI sql.NullString
+	var oldDisplayName string
 	err = tx.QueryRowContext(ctx,
-		`SELECT current_jti FROM users WHERE discord_id = ?`, discordID).Scan(&oldJTI)
+		`SELECT current_jti, display_name FROM users WHERE discord_id = ?`, discordID).Scan(&oldJTI, &oldDisplayName)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 
 	now := db.nowTS()
 
-	// Upsert the user first with current_jti = NULL so that the circular FK
-	// (issued_tokens.discord_id → users) can be satisfied in the next step.
+	// Upsert the user row with current_jti = NULL first; issued_tokens will be
+	// inserted next and current_jti pointed at it afterwards.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO users (discord_id, display_name, current_jti, created_at, updated_at)
 		 VALUES (?, ?, NULL, ?, ?)
@@ -105,8 +106,7 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return err
 	}
 
-	// Blacklist the old jti if there was one.
-	// jti_blacklist has no FK to issued_tokens, so this is always safe.
+	// Invalidate the previous token so it can no longer be used.
 	if oldJTI.Valid && oldJTI.String != "" {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
@@ -116,7 +116,15 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		}
 	}
 
-	// Record the new JWT; users row already exists so discord_id FK is satisfied.
+	// On rename, drop the stale latest_saves row for the old display name.
+	if oldDisplayName != "" && oldDisplayName != displayName {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM latest_saves WHERE display_name = ?`, oldDisplayName); err != nil {
+			return err
+		}
+	}
+
+	// Record the new token as an immutable audit entry.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO issued_tokens (jti, discord_id, display_name, jwt, issued_at)
 		 VALUES (?, ?, ?, ?, ?)`,
@@ -124,13 +132,15 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return err
 	}
 
-	// Point current_jti at the new token now that issued_tokens row exists.
+	// Activate the new token.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET current_jti = ?, updated_at = ? WHERE discord_id = ?`,
 		newJTI, now, discordID); err != nil {
 		return err
 	}
 
+	// Keep the existing ranking entry valid under the new token so the user
+	// stays in the ranking without needing to save again.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE latest_saves SET jti = ?
 		 WHERE display_name = ?
@@ -166,14 +176,6 @@ func (db *DB) ReleaseDisplayName(ctx context.Context, displayName, reason string
 			return "", err
 		}
 	}
-	// Clear current_jti before DELETE to avoid ambiguity in the circular FK
-	// (users.current_jti → issued_tokens) when CASCADE fires.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET current_jti = NULL WHERE display_name = ?`, displayName); err != nil {
-		return "", err
-	}
-	// CASCADE deletes all issued_tokens for this discord_id.
-	// latest_saves.jti is SET NULL automatically, removing the entry from ranking.
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM users WHERE display_name = ?`, displayName); err != nil {
 		return "", err

@@ -2,7 +2,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS issued_tokens (
     jti          TEXT PRIMARY KEY,
-    discord_id   TEXT NOT NULL REFERENCES users(discord_id) ON DELETE CASCADE,
+    discord_id   TEXT NOT NULL,
     display_name TEXT NOT NULL,
     jwt          TEXT NOT NULL,
     issued_at    TIMESTAMP NOT NULL
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS save_history (
     score        INTEGER NOT NULL,
     generated_at TIMESTAMP NOT NULL,
     created_at   TIMESTAMP NOT NULL,
+    jti          TEXT NOT NULL REFERENCES issued_tokens(jti),
     UNIQUE(display_name, generated_at)
 );
 CREATE INDEX IF NOT EXISTS idx_save_history_dn ON save_history(display_name, id DESC);
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS latest_saves (
     display_name TEXT PRIMARY KEY,
     score        INTEGER NOT NULL,
     history_id   INTEGER NOT NULL REFERENCES save_history(id),
-    jti          TEXT REFERENCES issued_tokens(jti) ON DELETE SET NULL,
+    jti          TEXT NOT NULL REFERENCES issued_tokens(jti),
     updated_at   TIMESTAMP NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_latest_saves_score ON latest_saves(score DESC);

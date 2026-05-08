@@ -57,26 +57,6 @@ func TestSaveAppendsHistoryAndUpdatesLatest(t *testing.T) {
 
 }
 
-func TestSaveWithoutJWTExcludedFromRanking(t *testing.T) {
-	d := newTestDB(t, nil)
-	ctx := context.Background()
-	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
-
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, "jti-1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Save(ctx, "anon", &savedata.Data{Score: 9999, GeneratedAt: time.Unix(1001, 0).UTC()}, ""); err != nil {
-		t.Fatal(err)
-	}
-
-	rows, err := d.Ranking(ctx, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || rows[0].DisplayName != "alice" {
-		t.Errorf("ranking = %+v, want only [alice]", rows)
-	}
-}
 
 func TestRankingFiltersBlacklistedJTI(t *testing.T) {
 	d := newTestDB(t, nil)

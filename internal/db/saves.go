@@ -30,9 +30,10 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 	defer tx.Rollback()
 
 	now := db.nowTS()
+
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO save_history (display_name, score, generated_at, created_at) VALUES (?, ?, ?, ?)`,
-		displayName, data.Score, data.GeneratedAt.UTC().Format(time.RFC3339), now)
+		`INSERT INTO save_history (display_name, score, generated_at, created_at, jti) VALUES (?, ?, ?, ?, ?)`,
+		displayName, data.Score, data.GeneratedAt.UTC().Format(time.RFC3339), now, jti)
 	if err != nil {
 		if strings.Contains(err.Error(), "save_history.generated_at") {
 			return ErrDuplicateSave
@@ -44,11 +45,6 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 		return err
 	}
 
-	var j sql.NullString
-	if jti != "" {
-		j = sql.NullString{String: jti, Valid: true}
-	}
-
 	if _, err = tx.ExecContext(ctx,
 		`INSERT INTO latest_saves (display_name, score, history_id, jti, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
@@ -57,7 +53,7 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 		   history_id = excluded.history_id,
 		   jti = excluded.jti,
 		   updated_at = excluded.updated_at`,
-		displayName, data.Score, historyID, j, now); err != nil {
+		displayName, data.Score, historyID, jti, now); err != nil {
 		return err
 	}
 
@@ -105,8 +101,7 @@ func (db *DB) Ranking(ctx context.Context, limit int) ([]RankingRow, error) {
 		 LEFT JOIN jti_blacklist b ON b.jti = s.jti
 		 LEFT JOIN discord_bans ban ON ban.discord_id = t.discord_id
 		 LEFT JOIN display_name_bans dnb ON dnb.display_name = s.display_name
-		 WHERE s.jti IS NOT NULL
-		   AND b.jti IS NULL
+		 WHERE b.jti IS NULL
 		   AND ban.discord_id IS NULL
 		   AND dnb.display_name IS NULL
 		 ORDER BY s.score DESC, s.updated_at ASC
