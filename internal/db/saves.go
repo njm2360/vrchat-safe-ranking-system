@@ -61,7 +61,7 @@ func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data,
 
 func (db *DB) GetLatestSave(ctx context.Context, displayName string) (*SaveEntry, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT id, display_name, score, created_at FROM save_history
+		`SELECT id, display_name, score, generated_at, created_at FROM save_history
 		 WHERE display_name = ?
 		 ORDER BY id DESC
 		 LIMIT 1`, displayName)
@@ -71,15 +71,16 @@ func (db *DB) GetLatestSave(ctx context.Context, displayName string) (*SaveEntry
 func (db *DB) scanSaveEntry(scan func(...any) error) (*SaveEntry, error) {
 	var e SaveEntry
 	var d savedata.Data
-	var ts string
-	if err := scan(&e.ID, &e.DisplayName, &d.Score, &ts); err != nil {
+	var generatedAt, createdAt string
+	if err := scan(&e.ID, &e.DisplayName, &d.Score, &generatedAt, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrSaveNotFound
 		}
 		return nil, err
 	}
+	d.GeneratedAt = parseTS(generatedAt)
 	e.Data = &d
-	e.CreatedAt = parseTS(ts)
+	e.CreatedAt = parseTS(createdAt)
 	return &e, nil
 }
 
