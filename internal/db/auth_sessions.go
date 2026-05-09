@@ -52,15 +52,9 @@ func (db *DB) GetAuthSession(ctx context.Context, token string) (*AuthSession, e
 }
 
 func (db *DB) ConsumeAuthSession(ctx context.Context, token string) (*AuthSession, error) {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	row := tx.QueryRowContext(ctx,
-		`SELECT token, discord_id, discord_username, proposed_name, created_at, expires_at
-		 FROM auth_sessions WHERE token = ?`, token)
+	row := db.QueryRowContext(ctx,
+		`DELETE FROM auth_sessions WHERE token = ?
+		 RETURNING token, discord_id, discord_username, proposed_name, created_at, expires_at`, token)
 	var s AuthSession
 	var created, expires string
 	if err := row.Scan(&s.Token, &s.DiscordID, &s.DiscordUsername, &s.ProposedName, &created, &expires); err != nil {
@@ -69,13 +63,6 @@ func (db *DB) ConsumeAuthSession(ctx context.Context, token string) (*AuthSessio
 		}
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_sessions WHERE token = ?`, token); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
 	s.CreatedAt = parseTS(created)
 	s.ExpiresAt = parseTS(expires)
 	if db.clock.Now().After(s.ExpiresAt) {

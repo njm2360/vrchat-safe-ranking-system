@@ -30,15 +30,9 @@ func (db *DB) InsertOAuthState(ctx context.Context, state, proposedName string, 
 }
 
 func (db *DB) ConsumeOAuthState(ctx context.Context, state string) (*OAuthState, error) {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	row := tx.QueryRowContext(ctx,
-		`SELECT state, proposed_name, created_at, expires_at
-		 FROM oauth_states WHERE state = ?`, state)
+	row := db.QueryRowContext(ctx,
+		`DELETE FROM oauth_states WHERE state = ?
+		 RETURNING state, proposed_name, created_at, expires_at`, state)
 	var s OAuthState
 	var created, expires string
 	if err := row.Scan(&s.State, &s.ProposedName, &created, &expires); err != nil {
@@ -47,13 +41,6 @@ func (db *DB) ConsumeOAuthState(ctx context.Context, state string) (*OAuthState,
 		}
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM oauth_states WHERE state = ?`, state); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
 	s.CreatedAt = parseTS(created)
 	s.ExpiresAt = parseTS(expires)
 	if db.clock.Now().After(s.ExpiresAt) {
