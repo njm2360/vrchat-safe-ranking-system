@@ -20,6 +20,14 @@ func (s *Server) requireJWT(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			return c.String(http.StatusUnauthorized, "jwt invalid")
 		}
+		owner, err := s.authDB.IsJTIOwner(c.Request().Context(), claims.JTI, claims.DisplayName)
+		if err != nil {
+			s.log.Error("jti owner check", "err", err)
+			return c.String(http.StatusInternalServerError, "internal error")
+		}
+		if !owner {
+			return c.String(http.StatusUnauthorized, "jwt invalid")
+		}
 		blacklisted, err := s.authDB.IsJTIBlacklisted(c.Request().Context(), claims.JTI)
 		if err != nil {
 			s.log.Error("jti blacklist check", "err", err)

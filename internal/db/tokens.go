@@ -6,6 +6,19 @@ import (
 	"errors"
 )
 
+func (db *DB) IsJTIOwner(ctx context.Context, jti, displayName string) (bool, error) {
+	var n int
+	err := db.QueryRowContext(ctx,
+		`SELECT 1 FROM users WHERE display_name = ? AND current_jti = ?`, displayName, jti).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (db *DB) IsJTIBlacklisted(ctx context.Context, jti string) (bool, error) {
 	var n int
 	err := db.QueryRowContext(ctx, `SELECT 1 FROM jti_blacklist WHERE jti = ?`, jti).Scan(&n)

@@ -79,9 +79,24 @@ func TestSave_InvalidJWT_Rejected(t *testing.T) {
 	}
 }
 
+func TestSave_WrongOwner_Rejected(t *testing.T) {
+	saves := &fakeSaveStore{}
+	authDB := &fakeAuthStore{jtiOwner: false}
+	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "victim", JTI: "jti-attacker"}}
+	h := newServerFull(saves, authDB, jwt, fakeIDGen{}, nil, nil)
+
+	rr, body := get(t, h, saveURL(9999, time.Unix(1000, 0).UTC(), "victim", "any.jwt.value", ""))
+	if rr.Code != http.StatusUnauthorized || body != "jwt invalid" {
+		t.Errorf("status=%d body=%q, want 401 'jwt invalid'", rr.Code, body)
+	}
+	if len(saves.saveCalls) != 0 {
+		t.Error("Save should not be called when JTI does not belong to display_name")
+	}
+}
+
 func TestSave_BlacklistedJWT_Rejected(t *testing.T) {
 	saves := &fakeSaveStore{}
-	authDB := &fakeAuthStore{jtiBlacklisted: true}
+	authDB := &fakeAuthStore{jtiOwner: true, jtiBlacklisted: true}
 	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "jti-revoked"}}
 	h := newServerFull(saves, authDB, jwt, fakeIDGen{}, nil, nil)
 

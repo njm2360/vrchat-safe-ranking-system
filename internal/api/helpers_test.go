@@ -15,7 +15,7 @@ import (
 )
 
 func newServer(saves api.SaveStore, jwt api.JWTVerifier, idgen api.IDGen) http.Handler {
-	return newServerFull(saves, &fakeAuthStore{}, jwt, idgen, nil, nil)
+	return newServerFull(saves, &fakeAuthStore{jtiOwner: true}, jwt, idgen, nil, nil)
 }
 
 func newServerFull(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifier, idgen api.IDGen, provider oauth.Provider, regSvc *registration.Service) http.Handler {

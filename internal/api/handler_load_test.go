@@ -75,7 +75,7 @@ func TestLoad_BlacklistedJWT_Rejected(t *testing.T) {
 	saves := &fakeSaveStore{
 		latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1}},
 	}
-	authDB := &fakeAuthStore{jtiBlacklisted: true}
+	authDB := &fakeAuthStore{jtiOwner: true, jtiBlacklisted: true}
 	jwtV := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "jti-revoked"}}
 	h := newServerFull(saves, authDB, jwtV, fakeIDGen{}, nil, nil)
 

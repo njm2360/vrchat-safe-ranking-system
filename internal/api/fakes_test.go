@@ -39,6 +39,8 @@ func (f *fakeSaveStore) Ranking(_ context.Context, _ int) ([]db.RankingRow, erro
 
 // fakeAuthStore implements api.AuthStore.
 type fakeAuthStore struct {
+	jtiOwner        bool
+	jtiOwnerErr     error
 	jtiBlacklisted  bool
 	jtiBlacklistErr error
 	dnBanned        bool
@@ -80,6 +82,9 @@ type insertSessionCall struct {
 	TTL             time.Duration
 }
 
+func (f *fakeAuthStore) IsJTIOwner(_ context.Context, _, _ string) (bool, error) {
+	return f.jtiOwner, f.jtiOwnerErr
+}
 func (f *fakeAuthStore) IsJTIBlacklisted(_ context.Context, _ string) (bool, error) {
 	return f.jtiBlacklisted, f.jtiBlacklistErr
 }

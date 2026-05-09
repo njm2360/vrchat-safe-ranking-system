@@ -32,6 +32,7 @@ type SaveStore interface {
 
 // AuthStore is the subset of *db.DB the OAuth handlers need.
 type AuthStore interface {
+	IsJTIOwner(ctx context.Context, jti, displayName string) (bool, error)
 	IsJTIBlacklisted(ctx context.Context, jti string) (bool, error)
 	IsDisplayNameBanned(ctx context.Context, displayName string) (bool, error)
 	InsertOAuthState(ctx context.Context, state, proposedName string, ttl time.Duration) error
