@@ -23,17 +23,17 @@ type fakeSaveStore struct {
 type saveCall struct {
 	DisplayName string
 	Data        *savedata.Data
-	JTI         string
+	JTI         *string
 }
 
-func (f *fakeSaveStore) Save(_ context.Context, dn string, data *savedata.Data, jti string) error {
+func (f *fakeSaveStore) Save(_ context.Context, dn string, data *savedata.Data, jti *string) error {
 	f.saveCalls = append(f.saveCalls, saveCall{dn, data, jti})
 	return f.saveErr
 }
 func (f *fakeSaveStore) GetLatestSave(_ context.Context, _ string) (*db.SaveEntry, error) {
 	return f.latestRet, f.latestErr
 }
-func (f *fakeSaveStore) Ranking(_ context.Context, _ int) ([]db.RankingRow, error) {
+func (f *fakeSaveStore) Ranking(_ context.Context, _ int, _ bool) ([]db.RankingRow, error) {
 	return f.rankingRet, f.rankingErr
 }
 
@@ -45,6 +45,8 @@ type fakeAuthStore struct {
 	jtiBlacklistErr error
 	dnBanned        bool
 	dnBannedErr     error
+	dnRegistered    bool
+	dnRegisteredErr error
 	insertCalls          []insertStateCall
 	insertErr            error
 	consumeRet           *db.OAuthState
@@ -90,6 +92,9 @@ func (f *fakeAuthStore) IsJTIBlacklisted(_ context.Context, _ string) (bool, err
 }
 func (f *fakeAuthStore) IsDisplayNameBanned(_ context.Context, _ string) (bool, error) {
 	return f.dnBanned, f.dnBannedErr
+}
+func (f *fakeAuthStore) IsDisplayNameRegistered(_ context.Context, _ string) (bool, error) {
+	return f.dnRegistered, f.dnRegisteredErr
 }
 func (f *fakeAuthStore) InsertOAuthState(_ context.Context, state, name string, ttl time.Duration) error {
 	f.insertCalls = append(f.insertCalls, insertStateCall{state, name, ttl})

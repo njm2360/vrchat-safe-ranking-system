@@ -25,13 +25,27 @@ func (s *Server) handleLoad(c echo.Context) error {
 	if !auth.VerifyHex(s.cfg.HMACLoadSecret, sigHex, []byte(displayName)) {
 		return c.String(http.StatusBadRequest, "invalid sig")
 	}
+
 	claims := claimsFromEcho(c)
-	if displayName != claims.DisplayName {
-		return c.String(http.StatusUnauthorized, "display_name mismatch")
+
+	if claims == nil {
+		registered, err := s.authDB.IsDisplayNameRegistered(c.Request().Context(), displayName)
+		if err != nil {
+			s.log.Error("is display name registered", "err", err)
+			return c.String(http.StatusInternalServerError, "internal error")
+		}
+		if registered {
+			return c.String(http.StatusUnauthorized, "jwt required for this display_name")
+		}
+	} else {
+		if displayName != claims.DisplayName {
+			return c.String(http.StatusUnauthorized, "display_name mismatch")
+		}
 	}
+
 	ctx := c.Request().Context()
 
-	entry, err := s.saves.GetLatestSave(ctx, claims.DisplayName)
+	entry, err := s.saves.GetLatestSave(ctx, displayName)
 	if err != nil {
 		if errors.Is(err, db.ErrSaveNotFound) {
 			return c.String(http.StatusNotFound, "")

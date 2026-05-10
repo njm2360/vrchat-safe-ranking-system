@@ -10,11 +10,11 @@ import (
 
 const claimsKey = "claims"
 
-func (s *Server) requireJWT(next echo.HandlerFunc) echo.HandlerFunc {
+func (s *Server) optionalJWT(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		jwtStr := strings.TrimSpace(c.QueryParam("jwt"))
 		if jwtStr == "" {
-			return c.String(http.StatusBadRequest, "missing jwt")
+			return next(c)
 		}
 		claims, err := s.jwt.Verify(jwtStr)
 		if err != nil {

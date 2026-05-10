@@ -27,6 +27,19 @@ func (db *DB) GetUserByDiscordID(ctx context.Context, discordID string) (*User, 
 		 FROM users WHERE discord_id = ?`, discordID))
 }
 
+func (db *DB) IsDisplayNameRegistered(ctx context.Context, displayName string) (bool, error) {
+	var n int
+	err := db.QueryRowContext(ctx,
+		`SELECT 1 FROM users WHERE display_name = ?`, displayName).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (db *DB) GetUserByDisplayName(ctx context.Context, displayName string) (*User, error) {
 	return db.scanUser(db.QueryRowContext(ctx,
 		`SELECT discord_id, display_name, COALESCE(current_jti, ''), created_at, updated_at

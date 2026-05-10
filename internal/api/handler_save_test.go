@@ -44,7 +44,7 @@ func TestSave_Ranked(t *testing.T) {
 	if rr.Code != http.StatusOK || body != "success" {
 		t.Errorf("status=%d body=%q, want 200 'success'", rr.Code, body)
 	}
-	if len(saves.saveCalls) != 1 || saves.saveCalls[0].JTI != "jti-1" || saves.saveCalls[0].DisplayName != "alice" {
+	if len(saves.saveCalls) != 1 || saves.saveCalls[0].JTI == nil || *saves.saveCalls[0].JTI != "jti-1" || saves.saveCalls[0].DisplayName != "alice" {
 		t.Errorf("save call = %+v", saves.saveCalls)
 	}
 	if saves.saveCalls[0].Data == nil || saves.saveCalls[0].Data.Score != 1234 {
@@ -52,16 +52,31 @@ func TestSave_Ranked(t *testing.T) {
 	}
 }
 
-func TestSave_MissingJWT_Rejected(t *testing.T) {
+func TestSave_Anonymous_Unregistered_OK(t *testing.T) {
 	saves := &fakeSaveStore{}
-	h := newServer(saves, &fakeJWT{}, fakeIDGen{})
+	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: false}
+	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
 
-	rr, _ := get(t, h, saveURL(100, time.Time{}, "alice", "", ""))
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rr.Code)
+	rr, body := get(t, h, saveURL(100, time.Unix(1000, 0).UTC(), "ghost", "", ""))
+	if rr.Code != http.StatusOK || body != "success" {
+		t.Errorf("status=%d body=%q, want 200 'success'", rr.Code, body)
+	}
+	if len(saves.saveCalls) != 1 || saves.saveCalls[0].JTI != nil {
+		t.Errorf("anonymous save should have nil JTI, got %+v", saves.saveCalls)
+	}
+}
+
+func TestSave_Anonymous_RegisteredName_Rejected(t *testing.T) {
+	saves := &fakeSaveStore{}
+	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: true}
+	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
+
+	rr, body := get(t, h, saveURL(100, time.Unix(1000, 0).UTC(), "alice", "", ""))
+	if rr.Code != http.StatusUnauthorized || body != "jwt required for this display_name" {
+		t.Errorf("status=%d body=%q, want 401 'jwt required for this display_name'", rr.Code, body)
 	}
 	if len(saves.saveCalls) != 0 {
-		t.Error("Save should not be called when jwt is missing")
+		t.Error("Save should not be called for registered name without JWT")
 	}
 }
 

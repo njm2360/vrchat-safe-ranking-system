@@ -28,9 +28,24 @@ func (s *Server) handleSave(c echo.Context) error {
 	if !auth.VerifyHex(s.cfg.HMACSaveSecret, sigHex, []byte(dataStr), []byte(displayName)) {
 		return c.String(http.StatusBadRequest, "invalid sig")
 	}
+
 	claims := claimsFromEcho(c)
-	if displayName != claims.DisplayName {
-		return c.String(http.StatusUnauthorized, "display_name mismatch")
+
+	var jtiPtr *string
+	if claims == nil {
+		registered, err := s.authDB.IsDisplayNameRegistered(c.Request().Context(), displayName)
+		if err != nil {
+			s.log.Error("is display name registered", "err", err)
+			return c.String(http.StatusInternalServerError, "internal error")
+		}
+		if registered {
+			return c.String(http.StatusUnauthorized, "jwt required for this display_name")
+		}
+	} else {
+		if displayName != claims.DisplayName {
+			return c.String(http.StatusUnauthorized, "display_name mismatch")
+		}
+		jtiPtr = &claims.JTI
 	}
 
 	data, err := savedata.Unmarshal([]byte(dataStr))
@@ -40,7 +55,7 @@ func (s *Server) handleSave(c echo.Context) error {
 	if data.GeneratedAt.IsZero() {
 		return c.String(http.StatusBadRequest, "missing generated_at")
 	}
-	if err := s.saves.Save(c.Request().Context(), claims.DisplayName, data, claims.JTI); err != nil {
+	if err := s.saves.Save(c.Request().Context(), displayName, data, jtiPtr); err != nil {
 		if errors.Is(err, db.ErrDuplicateSave) {
 			return c.String(http.StatusConflict, "duplicate save")
 		}

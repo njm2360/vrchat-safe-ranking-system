@@ -22,7 +22,7 @@ type SaveEntry struct {
 	CreatedAt   time.Time
 }
 
-func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data, jti string) error {
+func (db *DB) Save(ctx context.Context, displayName string, data *savedata.Data, jti *string) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -89,24 +89,32 @@ type RankingRow struct {
 	DisplayName string    `json:"display_name"`
 	Score       int64     `json:"score"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Verified    bool      `json:"verified"`
 }
 
-func (db *DB) Ranking(ctx context.Context, limit int) ([]RankingRow, error) {
+func (db *DB) Ranking(ctx context.Context, limit int, verifiedOnly bool) ([]RankingRow, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	rows, err := db.QueryContext(ctx,
-		`SELECT s.display_name, s.score, s.updated_at FROM latest_saves s
+	q := `SELECT s.display_name, s.score, s.updated_at, (sh.jti IS NOT NULL) AS verified
+		 FROM latest_saves s
 		 JOIN save_history sh ON sh.id = s.save_id
-		 JOIN issued_tokens t ON t.jti = sh.jti
+		 LEFT JOIN issued_tokens t ON t.jti = sh.jti
 		 LEFT JOIN jti_blacklist b ON b.jti = sh.jti
 		 LEFT JOIN discord_bans ban ON ban.discord_id = t.discord_id
 		 LEFT JOIN display_name_bans dnb ON dnb.display_name = s.display_name
 		 WHERE b.jti IS NULL
 		   AND ban.discord_id IS NULL
-		   AND dnb.display_name IS NULL
+		   AND dnb.display_name IS NULL`
+	if verifiedOnly {
+		q += `
+		   AND sh.jti IS NOT NULL`
+	}
+	q += `
 		 ORDER BY s.score DESC, s.updated_at ASC
-		 LIMIT ?`, limit)
+		 LIMIT ?`
+
+	rows, err := db.QueryContext(ctx, q, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -118,11 +126,13 @@ func (db *DB) Ranking(ctx context.Context, limit int) ([]RankingRow, error) {
 		rank++
 		var r RankingRow
 		var updatedAt string
-		if err := rows.Scan(&r.DisplayName, &r.Score, &updatedAt); err != nil {
+		var verified int
+		if err := rows.Scan(&r.DisplayName, &r.Score, &updatedAt, &verified); err != nil {
 			return nil, err
 		}
 		r.Rank = rank
 		r.UpdatedAt = parseTS(updatedAt)
+		r.Verified = verified != 0
 		out = append(out, r)
 	}
 	return out, rows.Err()

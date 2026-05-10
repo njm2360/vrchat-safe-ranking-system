@@ -25,9 +25,9 @@ import (
 
 // SaveStore is the subset of *db.DB the save/load/ranking handlers need.
 type SaveStore interface {
-	Save(ctx context.Context, displayName string, data *savedata.Data, jti string) error
+	Save(ctx context.Context, displayName string, data *savedata.Data, jti *string) error
 	GetLatestSave(ctx context.Context, displayName string) (*db.SaveEntry, error)
-	Ranking(ctx context.Context, limit int) ([]db.RankingRow, error)
+	Ranking(ctx context.Context, limit int, verifiedOnly bool) ([]db.RankingRow, error)
 }
 
 // AuthStore is the subset of *db.DB the OAuth handlers need.
@@ -38,6 +38,7 @@ type AuthStore interface {
 	InsertOAuthState(ctx context.Context, state, proposedName string, ttl time.Duration) error
 	ConsumeOAuthState(ctx context.Context, state string) (*db.OAuthState, error)
 	IsDiscordIDBanned(ctx context.Context, discordID string) (bool, error)
+	IsDisplayNameRegistered(ctx context.Context, displayName string) (bool, error)
 	GetCurrentJWT(ctx context.Context, discordID string) (jwt, displayName string, err error)
 	GetUserByDiscordID(ctx context.Context, discordID string) (*db.User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (*db.User, error)
@@ -138,8 +139,8 @@ func (s *Server) Handler() http.Handler {
 	}))
 	e.Use(middleware.Recover())
 
-	e.GET("/save", s.handleSave, s.requireJWT)
-	e.GET("/load", s.handleLoad, s.requireJWT)
+	e.GET("/save", s.handleSave, s.optionalJWT)
+	e.GET("/load", s.handleLoad, s.optionalJWT)
 	e.GET("/ranking", s.handleRanking)
 	e.GET("/auth/start", s.handleAuthStart)
 	e.GET("/auth/callback", s.handleAuthCallback)

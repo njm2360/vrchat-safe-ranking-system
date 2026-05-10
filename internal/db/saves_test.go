@@ -11,6 +11,8 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
 
+func jtiPtr(s string) *string { return &s }
+
 // seedIssuedToken creates a users row (if needed) then inserts an issued_tokens
 // row, mirroring the order required by issued_tokens.discord_id → users FK.
 func seedIssuedToken(t *testing.T, d *db.DB, jti, discordID, displayName string) {
@@ -40,10 +42,10 @@ func TestSaveAppendsHistoryAndUpdatesLatest(t *testing.T) {
 	ctx := context.Background()
 	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
 
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, "jti-1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("jti-1")); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(1001, 0).UTC()}, "jti-1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("jti-1")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -54,9 +56,23 @@ func TestSaveAppendsHistoryAndUpdatesLatest(t *testing.T) {
 	if got.Data.Score != 200 {
 		t.Errorf("Score = %d, want 200", got.Data.Score)
 	}
-
 }
 
+func TestSave_Anonymous_NilJTI(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+
+	if err := d.Save(ctx, "anon", &savedata.Data{Score: 42, GeneratedAt: time.Unix(1000, 0).UTC()}, nil); err != nil {
+		t.Fatalf("anonymous save: %v", err)
+	}
+	got, err := d.GetLatestSave(ctx, "anon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Data.Score != 42 {
+		t.Errorf("score = %d, want 42", got.Data.Score)
+	}
+}
 
 func TestRankingFiltersBlacklistedJTI(t *testing.T) {
 	d := newTestDB(t, nil)
@@ -64,14 +80,14 @@ func TestRankingFiltersBlacklistedJTI(t *testing.T) {
 	seedIssuedToken(t, d, "jti-good", "119548486276710400", "alice")
 	seedIssuedToken(t, d, "jti-bad", "119548486276710401", "bob")
 
-	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, "jti-good")
-	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, "jti-bad")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("jti-good"))
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("jti-bad"))
 
 	if err := d.BlacklistJTI(ctx, "jti-bad", "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	rows, _ := d.Ranking(ctx, 10)
+	rows, _ := d.Ranking(ctx, 10, false)
 	if len(rows) != 1 || rows[0].DisplayName != "alice" {
 		t.Errorf("ranking = %+v, want only [alice]", rows)
 	}
@@ -83,14 +99,14 @@ func TestRankingFiltersBannedDiscordID(t *testing.T) {
 	seedIssuedToken(t, d, "jti-a", "good-id", "alice")
 	seedIssuedToken(t, d, "jti-b", "banned-id", "bob")
 
-	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, "jti-a")
-	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, "jti-b")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("jti-a"))
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("jti-b"))
 
 	if err := d.BanDiscordID(ctx, "banned-id", "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	rows, _ := d.Ranking(ctx, 10)
+	rows, _ := d.Ranking(ctx, 10, false)
 	if len(rows) != 1 || rows[0].DisplayName != "alice" {
 		t.Errorf("ranking = %+v, want only [alice]", rows)
 	}
@@ -105,13 +121,13 @@ func TestRankingOrdering(t *testing.T) {
 	seedIssuedToken(t, d, "j2", "d2", "bob")
 	seedIssuedToken(t, d, "j3", "d3", "charlie")
 
-	_ = d.Save(ctx, "alice", &savedata.Data{Score: 500, GeneratedAt: time.Unix(1000, 0).UTC()}, "j1")
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 500, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("j1"))
 	fc.Advance(time.Second)
-	_ = d.Save(ctx, "bob", &savedata.Data{Score: 1000, GeneratedAt: time.Unix(1001, 0).UTC()}, "j2")
+	_ = d.Save(ctx, "bob", &savedata.Data{Score: 1000, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("j2"))
 	fc.Advance(time.Second)
-	_ = d.Save(ctx, "charlie", &savedata.Data{Score: 1000, GeneratedAt: time.Unix(1002, 0).UTC()}, "j3") // tie with bob, but later
+	_ = d.Save(ctx, "charlie", &savedata.Data{Score: 1000, GeneratedAt: time.Unix(1002, 0).UTC()}, jtiPtr("j3")) // tie with bob, but later
 
-	rows, _ := d.Ranking(ctx, 10)
+	rows, _ := d.Ranking(ctx, 10, false)
 	if len(rows) != 3 {
 		t.Fatalf("len = %d, want 3", len(rows))
 	}
@@ -131,9 +147,49 @@ func TestRankingLimitClamp(t *testing.T) {
 	ctx := context.Background()
 	// 0 → defaults to 100, > 1000 → defaults to 100
 	for _, lim := range []int{-1, 0, 99999} {
-		if _, err := d.Ranking(ctx, lim); err != nil {
+		if _, err := d.Ranking(ctx, lim, false); err != nil {
 			t.Errorf("Ranking(%d) returned error: %v", lim, err)
 		}
+	}
+}
+
+func TestRanking_AnonymousUserAppearsUnverified(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	seedIssuedToken(t, d, "jti-a", "uid-a", "alice")
+
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("jti-a"))
+	_ = d.Save(ctx, "anon", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, nil)
+
+	rows, err := d.Ranking(ctx, 10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len = %d, want 2", len(rows))
+	}
+	if !rows[0].Verified || rows[0].DisplayName != "alice" {
+		t.Errorf("rows[0] = %+v, want alice verified=true", rows[0])
+	}
+	if rows[1].Verified || rows[1].DisplayName != "anon" {
+		t.Errorf("rows[1] = %+v, want anon verified=false", rows[1])
+	}
+}
+
+func TestRanking_VerifiedOnlyFilter(t *testing.T) {
+	d := newTestDB(t, nil)
+	ctx := context.Background()
+	seedIssuedToken(t, d, "jti-a", "uid-a", "alice")
+
+	_ = d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(1001, 0).UTC()}, jtiPtr("jti-a"))
+	_ = d.Save(ctx, "anon", &savedata.Data{Score: 999, GeneratedAt: time.Unix(1000, 0).UTC()}, nil)
+
+	rows, err := d.Ranking(ctx, 10, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].DisplayName != "alice" {
+		t.Errorf("verified-only ranking = %+v, want only [alice]", rows)
 	}
 }
 
@@ -149,10 +205,10 @@ func TestSave_DuplicateGeneratedAt(t *testing.T) {
 	ctx := context.Background()
 	seedIssuedToken(t, d, "jti-1", "119548486276710400", "alice")
 
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(5000, 0).UTC()}, "jti-1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(5000, 0).UTC()}, jtiPtr("jti-1")); err != nil {
 		t.Fatal(err)
 	}
-	err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(5000, 0).UTC()}, "jti-1")
+	err := d.Save(ctx, "alice", &savedata.Data{Score: 200, GeneratedAt: time.Unix(5000, 0).UTC()}, jtiPtr("jti-1"))
 	if !errors.Is(err, db.ErrDuplicateSave) {
 		t.Errorf("err = %v, want ErrDuplicateSave", err)
 	}
@@ -164,10 +220,10 @@ func TestSave_SameGeneratedAt_DifferentUser(t *testing.T) {
 	seedIssuedToken(t, d, "jti-a", "uid-a", "alice")
 	seedIssuedToken(t, d, "jti-b", "uid-b", "bob")
 
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(5000, 0).UTC()}, "jti-a"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(5000, 0).UTC()}, jtiPtr("jti-a")); err != nil {
 		t.Errorf("alice save: %v", err)
 	}
-	if err := d.Save(ctx, "bob", &savedata.Data{Score: 200, GeneratedAt: time.Unix(5000, 0).UTC()}, "jti-b"); err != nil {
+	if err := d.Save(ctx, "bob", &savedata.Data{Score: 200, GeneratedAt: time.Unix(5000, 0).UTC()}, jtiPtr("jti-b")); err != nil {
 		t.Errorf("bob save with same generated_at should succeed: %v", err)
 	}
 }

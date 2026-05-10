@@ -132,7 +132,7 @@ func TestUpsertUserAndIssue_ReissueDropsFromRanking(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, jtiPtr("j1")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +141,7 @@ func TestUpsertUserAndIssue_ReissueDropsFromRanking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := d.Ranking(ctx, 10)
+	rows, err := d.Ranking(ctx, 10, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, "j1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, jtiPtr("j1")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,7 +168,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := d.Ranking(ctx, 10)
+	rows, err := d.Ranking(ctx, 10, false)
 	if err != nil {
 		t.Fatal(err)
 	}

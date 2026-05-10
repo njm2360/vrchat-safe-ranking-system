@@ -165,7 +165,7 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	}
 
 	fmt.Println("=> ranking (top 10)")
-	rows, err := database.Ranking(ctx, 10)
+	rows, err := database.Ranking(ctx, 10, false)
 	exitIf(err)
 	for _, r := range rows {
 		fmt.Printf("   #%d %s : %d\n", r.Rank, r.DisplayName, r.Score)

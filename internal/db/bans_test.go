@@ -78,11 +78,11 @@ func TestBanDisplayName_HidesFromRanking(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Save(ctx, "alice", &savedata.Data{Score: 500}, "j1"); err != nil {
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 500}, jtiPtr("j1")); err != nil {
 		t.Fatal(err)
 	}
 
-	rows, _ := d.Ranking(ctx, 10)
+	rows, _ := d.Ranking(ctx, 10, false)
 	if len(rows) != 1 {
 		t.Fatalf("expected 1 ranking row before ban, got %d", len(rows))
 	}
@@ -90,7 +90,7 @@ func TestBanDisplayName_HidesFromRanking(t *testing.T) {
 	if err := d.BanDisplayName(ctx, "alice", "cheat"); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ = d.Ranking(ctx, 10)
+	rows, _ = d.Ranking(ctx, 10, false)
 	if len(rows) != 0 {
 		t.Errorf("expected empty ranking after display name ban, got %+v", rows)
 	}
@@ -98,7 +98,7 @@ func TestBanDisplayName_HidesFromRanking(t *testing.T) {
 	if err := d.UnbanDisplayName(ctx, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ = d.Ranking(ctx, 10)
+	rows, _ = d.Ranking(ctx, 10, false)
 	if len(rows) != 1 || rows[0].DisplayName != "alice" {
 		t.Errorf("expected alice back in ranking after unban, got %+v", rows)
 	}

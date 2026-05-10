@@ -15,7 +15,8 @@ func (s *Server) handleRanking(c echo.Context) error {
 			limit = n
 		}
 	}
-	rows, err := s.saves.Ranking(c.Request().Context(), limit)
+	verifiedOnly := c.QueryParam("verified") == "true"
+	rows, err := s.saves.Ranking(c.Request().Context(), limit, verifiedOnly)
 	if err != nil {
 		s.log.Error("ranking", "err", err)
 		return c.String(http.StatusInternalServerError, "internal error")

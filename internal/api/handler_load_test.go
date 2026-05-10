@@ -50,13 +50,35 @@ func TestLoad_Success(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingJWT_Rejected(t *testing.T) {
-	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1}}}
-	h := newServer(saves, &fakeJWT{}, fakeIDGen{})
+func TestLoad_Anonymous_Unregistered_OK(t *testing.T) {
+	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1234, GeneratedAt: time.Unix(9999, 0).UTC()}}}
+	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: false}
+	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
 
-	rr, _ := get(t, h, loadURL("alice", ""))
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rr.Code)
+	rr, body := get(t, h, loadURL("ghost", ""))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q, want 200", rr.Code, body)
+	}
+	var resp struct {
+		Data json.RawMessage `json:"data"`
+		Sig  string          `json:"sig"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !auth.VerifyHex([]byte("load-secret"), resp.Sig, resp.Data) {
+		t.Error("response sig does not verify")
+	}
+}
+
+func TestLoad_Anonymous_RegisteredName_Rejected(t *testing.T) {
+	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1}}}
+	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: true}
+	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
+
+	rr, body := get(t, h, loadURL("alice", ""))
+	if rr.Code != http.StatusUnauthorized || body != "jwt required for this display_name" {
+		t.Errorf("status=%d body=%q, want 401 'jwt required for this display_name'", rr.Code, body)
 	}
 }
 

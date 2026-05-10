@@ -210,7 +210,7 @@ func TestE2E_HappyPath(t *testing.T) {
 		t.Errorf("loaded = %+v, want Score=1234", loaded)
 	}
 
-	rows, _ := h.db.Ranking(context.Background(), 10)
+	rows, _ := h.db.Ranking(context.Background(), 10, false)
 	if len(rows) != 1 || rows[0].DisplayName != "alice" || rows[0].Score != 1234 {
 		t.Errorf("ranking = %+v", rows)
 	}
@@ -225,7 +225,7 @@ func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 	jwt2 := h.register("discord-1", "alice2")
 	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 999, GeneratedAt: time.Unix(1001, 0).UTC()}, JWT: jwt2, DisplayName: "alice2"})
 
-	rows, _ := h.db.Ranking(context.Background(), 10)
+	rows, _ := h.db.Ranking(context.Background(), 10, false)
 	if len(rows) != 1 {
 		t.Fatalf("ranking len = %d, want 1 (old entry should be excluded)", len(rows))
 	}
@@ -243,7 +243,7 @@ func TestE2E_BanHidesUserFromRanking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, _ := h.db.Ranking(context.Background(), 10)
+	rows, _ := h.db.Ranking(context.Background(), 10, false)
 	if len(rows) != 0 {
 		t.Errorf("ranking should be empty after ban, got %+v", rows)
 	}
@@ -260,21 +260,35 @@ func TestE2E_BannedUserCannotRegister(t *testing.T) {
 	}
 }
 
-func TestE2E_SaveWithoutJWT_Rejected(t *testing.T) {
+func TestE2E_AnonymousSave_OK(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 9999, GeneratedAt: time.Unix(1000, 0).UTC()}, DisplayName: "alice"})
-	if err == nil {
-		t.Fatal("expected error for save without jwt, got nil")
+	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 42, GeneratedAt: time.Unix(1000, 0).UTC()}, DisplayName: "ghost"})
+	if err != nil {
+		t.Fatalf("anonymous save should succeed: %v", err)
+	}
+	if body != "success" {
+		t.Errorf("body = %q, want 'success'", body)
 	}
 }
 
-func TestE2E_LoadWithoutJWT_Rejected(t *testing.T) {
+func TestE2E_SaveWithoutJWT_Rejected_ForRegisteredUser(t *testing.T) {
 	h := newHarness(t)
+	h.register("discord-anon", "alice")
+
+	_, err := h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 9999, GeneratedAt: time.Unix(1000, 0).UTC()}, DisplayName: "alice"})
+	if err == nil {
+		t.Fatal("expected error for registered user save without jwt, got nil")
+	}
+}
+
+func TestE2E_LoadWithoutJWT_Rejected_ForRegisteredUser(t *testing.T) {
+	h := newHarness(t)
+	h.register("discord-anon", "alice")
 
 	_, err := h.client.Load(context.Background(), vrcclient.LoadParams{DisplayName: "alice"})
 	if err == nil {
-		t.Fatal("expected error for load without jwt, got nil")
+		t.Fatal("expected error for registered user load without jwt, got nil")
 	}
 }
 

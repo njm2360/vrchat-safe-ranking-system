@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS save_history (
     score        INTEGER NOT NULL,
     generated_at TIMESTAMP NOT NULL,
     created_at   TIMESTAMP NOT NULL,
-    jti          TEXT NOT NULL REFERENCES issued_tokens(jti),
+    jti          TEXT REFERENCES issued_tokens(jti),
     UNIQUE(display_name, generated_at)
 );
 CREATE INDEX IF NOT EXISTS idx_save_history_dn ON save_history(display_name, id DESC);
