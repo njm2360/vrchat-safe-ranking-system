@@ -18,6 +18,7 @@ type Config struct {
 	JWTSecret      []byte
 	HMACSaveSecret []byte
 	HMACLoadSecret []byte
+	HMACAuthSecret []byte
 	OAuthStateTTL  time.Duration
 	SessionTTL     time.Duration
 
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		JWTSecret:           []byte(os.Getenv("JWT_SECRET")),
 		HMACSaveSecret:      []byte(os.Getenv("HMAC_SAVE_SECRET")),
 		HMACLoadSecret:      []byte(os.Getenv("HMAC_LOAD_SECRET")),
+		HMACAuthSecret:      []byte(os.Getenv("HMAC_AUTH_SECRET")),
 		OAuthStateTTL:       getEnvDuration("OAUTH_STATE_TTL", 5*time.Minute),
 		SessionTTL:          getEnvDuration("SESSION_TTL", 30*time.Minute),
 		DiscordClientID:     os.Getenv("DISCORD_CLIENT_ID"),
@@ -63,6 +65,9 @@ func Load() (*Config, error) {
 	}
 	if len(c.HMACLoadSecret) < 16 {
 		return nil, errors.New("HMAC_LOAD_SECRET must be set and at least 16 bytes")
+	}
+	if len(c.HMACAuthSecret) < 16 {
+		return nil, errors.New("HMAC_AUTH_SECRET must be set and at least 16 bytes")
 	}
 	switch c.OAuthMode {
 	case OAuthModeDiscord:

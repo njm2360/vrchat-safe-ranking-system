@@ -16,7 +16,10 @@ func TestMockOAuth_StartRedirectsToMockLogin_ExplicitOverrides(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
-	rr, _ := get(t, h, "/auth/start?name=alice&fake_discord_id=100000000000000001&fake_username=alice.dev")
+	rr, _ := get(t, h, authStartURL("alice", url.Values{
+		"fake_discord_id": {"100000000000000001"},
+		"fake_username":   {"alice.dev"},
+	}))
 	if rr.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rr.Code)
 	}
@@ -41,7 +44,7 @@ func TestMockOAuth_StartAutoDefaults(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
-	rr, _ := get(t, h, "/auth/start?name=alice")
+	rr, _ := get(t, h, authStartURL("alice", nil))
 	if rr.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rr.Code)
 	}
@@ -66,8 +69,8 @@ func TestMockOAuth_StartAutoIDIsRandom(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
-	rr1, _ := get(t, h, "/auth/start?name=alice")
-	rr2, _ := get(t, h, "/auth/start?name=bob")
+	rr1, _ := get(t, h, authStartURL("alice", nil))
+	rr2, _ := get(t, h, authStartURL("bob", nil))
 	id1 := mustQuery(t, rr1.Header().Get("Location"), "discord_id")
 	id2 := mustQuery(t, rr2.Header().Get("Location"), "discord_id")
 	if id1 == id2 {
@@ -129,7 +132,10 @@ func TestMockOAuth_FullFlow_Register(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
-	rr1, _ := get(t, h, "/auth/start?name=alice&fake_discord_id=200000000000000001&fake_username=alice.dev")
+	rr1, _ := get(t, h, authStartURL("alice", url.Values{
+		"fake_discord_id": {"200000000000000001"},
+		"fake_username":   {"alice.dev"},
+	}))
 	if rr1.Code != http.StatusFound {
 		t.Fatalf("start status = %d", rr1.Code)
 	}
@@ -190,7 +196,7 @@ func TestMockOAuth_RejectsNonNumericDiscordID(t *testing.T) {
 	h := newMockServer(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, regSvc)
 
 	for _, bad := range []string{"alice", "user-1", "123abc", "with space", "with/slash", "123-456"} {
-		rr, _ := get(t, h, "/auth/start?name=alice&fake_discord_id="+url.QueryEscape(bad))
+		rr, _ := get(t, h, authStartURL("alice", url.Values{"fake_discord_id": {bad}}))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("fake_discord_id=%q: status = %d, want 400", bad, rr.Code)
 		}
@@ -203,7 +209,7 @@ func TestMockOAuth_RejectsInvalidUsername(t *testing.T) {
 
 	// Reject the '|' separator. Other Unicode / uppercase characters are allowed.
 	for _, bad := range []string{"alice|bar"} {
-		rr, _ := get(t, h, "/auth/start?name=alice&fake_username="+url.QueryEscape(bad))
+		rr, _ := get(t, h, authStartURL("alice", url.Values{"fake_username": {bad}}))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("fake_username=%q: status = %d, want 400", bad, rr.Code)
 		}

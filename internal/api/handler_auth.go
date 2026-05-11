@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
@@ -49,9 +50,17 @@ func newRandomToken() (string, error) {
 }
 
 func (s *Server) handleAuthStart(c echo.Context) error {
-	proposedName := strings.TrimSpace(c.QueryParam("name"))
+	proposedName := strings.TrimSpace(c.QueryParam("display_name"))
 	if !validDisplayName(proposedName) {
-		return s.renderError(c, http.StatusBadRequest, "名前が指定されていないか、使用できない文字が含まれています。")
+		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
+	}
+
+	sigHex := strings.TrimSpace(c.QueryParam("sig"))
+	if sigHex == "" {
+		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
+	}
+	if !auth.VerifyHex(s.cfg.HMACAuthSecret, sigHex, []byte(proposedName)) {
+		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
 	}
 
 	mockDiscordID, mockUsername := "", ""
@@ -66,16 +75,14 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 			mockDiscordID = id
 		}
 		if !validMockDiscordID(mockDiscordID) {
-			return c.String(http.StatusBadRequest,
-				"mock OAuth: fake_discord_id must be numeric (Discord snowflake).")
+			return c.String(http.StatusBadRequest, "リクエストが不正です。")
 		}
 		mockUsername = strings.TrimSpace(c.QueryParam("fake_username"))
 		if mockUsername == "" {
 			mockUsername = proposedName
 		}
 		if !validMockUsername(mockUsername) {
-			return c.String(http.StatusBadRequest,
-				"mock OAuth: fake_username must be 1-64 chars and contain no '|' or control chars.")
+			return c.String(http.StatusBadRequest, "リクエストが不正です。")
 		}
 	}
 

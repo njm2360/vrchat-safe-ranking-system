@@ -18,14 +18,16 @@ type Client struct {
 	HTTP       *http.Client
 	SaveSecret []byte
 	LoadSecret []byte
+	AuthSecret []byte
 }
 
-func New(baseURL string, saveSecret, loadSecret []byte) *Client {
+func New(baseURL string, saveSecret, loadSecret, authSecret []byte) *Client {
 	return &Client{
 		BaseURL:    strings.TrimRight(baseURL, "/"),
 		HTTP:       http.DefaultClient,
 		SaveSecret: saveSecret,
 		LoadSecret: loadSecret,
+		AuthSecret: authSecret,
 	}
 }
 
@@ -70,6 +72,26 @@ func (c *Client) Save(ctx context.Context, p SaveParams) (string, error) {
 type LoadParams struct {
 	JWT         string
 	DisplayName string
+}
+
+type AuthStartParams struct {
+	DisplayName   string
+	FakeDiscordID string
+	FakeUsername  string
+}
+
+func (c *Client) AuthStartURL(p AuthStartParams) string {
+	sig := auth.SignHex(c.AuthSecret, []byte(p.DisplayName))
+	q := url.Values{}
+	q.Set("display_name", p.DisplayName)
+	q.Set("sig", sig)
+	if p.FakeDiscordID != "" {
+		q.Set("fake_discord_id", p.FakeDiscordID)
+	}
+	if p.FakeUsername != "" {
+		q.Set("fake_username", p.FakeUsername)
+	}
+	return c.BaseURL + "/auth/start?" + q.Encode()
 }
 
 func (c *Client) LoadURL(p LoadParams) string {

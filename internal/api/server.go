@@ -62,6 +62,7 @@ type IDGen interface {
 type Config struct {
 	HMACSaveSecret []byte
 	HMACLoadSecret []byte
+	HMACAuthSecret []byte
 	OAuthStateTTL  time.Duration
 	SessionTTL     time.Duration
 	MockOAuth      bool

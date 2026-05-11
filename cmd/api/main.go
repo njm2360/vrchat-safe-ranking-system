@@ -53,6 +53,7 @@ func main() {
 	apiCfg := api.Config{
 		HMACSaveSecret: cfg.HMACSaveSecret,
 		HMACLoadSecret: cfg.HMACLoadSecret,
+		HMACAuthSecret: cfg.HMACAuthSecret,
 		OAuthStateTTL:  cfg.OAuthStateTTL,
 		SessionTTL:     cfg.SessionTTL,
 		MockOAuth:      cfg.OAuthMode == config.OAuthModeMock,

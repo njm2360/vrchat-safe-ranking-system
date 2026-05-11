@@ -28,7 +28,7 @@ func main() {
 	cfg, err := config.Load()
 	exitIf(err)
 
-	client := vrcclient.New(cfg.BaseURL, cfg.HMACSaveSecret, cfg.HMACLoadSecret)
+	client := vrcclient.New(cfg.BaseURL, cfg.HMACSaveSecret, cfg.HMACLoadSecret, cfg.HMACAuthSecret)
 	ctx := context.Background()
 
 	switch sub {
@@ -36,6 +36,8 @@ func main() {
 		runSave(ctx, client, args)
 	case "load":
 		runLoad(ctx, client, args)
+	case "auth-start-url":
+		runAuthStartURL(client, args)
 	case "e2e":
 		runE2E(ctx, cfg, client, args)
 	case "-h", "--help", "help":
@@ -56,6 +58,11 @@ Subcommands:
 
   load --jwt <JWT> --display-name <name> [--print-url]
       Send /load. Prints the score (empty for no save).
+
+  auth-start-url --display-name <name> [--fake-discord-id <id>] [--fake-username <username>]
+      Print a signed /auth/start URL. Open it in a browser to begin the
+      Discord OAuth flow. fake-* are only meaningful when the API server is
+      running with OAUTH_MODE=mock.
 
   e2e --name <DisplayName> [--discord-id <id>] [--score <int>]
       Full happy-path flow with no Discord OAuth round-trip:
@@ -125,6 +132,22 @@ func runLoad(ctx context.Context, client *vrcclient.Client, args []string) {
 		return
 	}
 	fmt.Printf("score = %d\n", v.Score)
+}
+
+func runAuthStartURL(client *vrcclient.Client, args []string) {
+	fs := flag.NewFlagSet("auth-start-url", flag.ExitOnError)
+	displayName := fs.String("display-name", "", "VRChat display name to register")
+	fakeDiscordID := fs.String("fake-discord-id", "", "(mock OAuth) Discord snowflake")
+	fakeUsername := fs.String("fake-username", "", "(mock OAuth) Discord username")
+	_ = fs.Parse(args)
+	if *displayName == "" {
+		exitIf(fmt.Errorf("--display-name required"))
+	}
+	fmt.Println(client.AuthStartURL(vrcclient.AuthStartParams{
+		DisplayName:   *displayName,
+		FakeDiscordID: *fakeDiscordID,
+		FakeUsername:  *fakeUsername,
+	}))
 }
 
 func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, args []string) {

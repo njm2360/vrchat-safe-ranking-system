@@ -30,6 +30,7 @@ func TestSecurityHeaders_HSTSGatedOnHTTPS(t *testing.T) {
 	cfg := api.Config{
 		HMACSaveSecret: []byte("save-secret"),
 		HMACLoadSecret: []byte("load-secret"),
+		HMACAuthSecret: []byte("auth-secret"),
 		OAuthStateTTL:  5 * time.Minute,
 		SessionTTL:     15 * time.Minute,
 	}

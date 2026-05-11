@@ -10,9 +10,26 @@ import (
 	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/api"
+	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
 )
+
+var testAuthSecret = []byte("auth-secret")
+
+// authStartURL builds a signed /auth/start URL for tests. extra carries
+// optional mock-mode query params (fake_discord_id, fake_username).
+func authStartURL(displayName string, extra url.Values) string {
+	q := url.Values{}
+	q.Set("display_name", displayName)
+	q.Set("sig", auth.SignHex(testAuthSecret, []byte(displayName)))
+	for k, vs := range extra {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	return "/auth/start?" + q.Encode()
+}
 
 func newServer(saves api.SaveStore, jwt api.JWTVerifier, idgen api.IDGen) http.Handler {
 	return newServerFull(saves, &fakeAuthStore{jtiOwner: true}, jwt, idgen, nil, nil)
@@ -22,6 +39,7 @@ func newServerFull(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifie
 	cfg := api.Config{
 		HMACSaveSecret: []byte("save-secret"),
 		HMACLoadSecret: []byte("load-secret"),
+		HMACAuthSecret: testAuthSecret,
 		OAuthStateTTL:  5 * time.Minute,
 		SessionTTL:     15 * time.Minute,
 	}
@@ -32,6 +50,7 @@ func newMockServer(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifie
 	cfg := api.Config{
 		HMACSaveSecret: []byte("save-secret"),
 		HMACLoadSecret: []byte("load-secret"),
+		HMACAuthSecret: testAuthSecret,
 		OAuthStateTTL:  5 * time.Minute,
 		SessionTTL:     15 * time.Minute,
 		MockOAuth:      true,

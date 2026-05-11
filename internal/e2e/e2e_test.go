@@ -33,6 +33,7 @@ const (
 	jwtSecret  = "e2e-jwt-secret-padded-to-32-bytes-yes"
 	saveSecret = "e2e-save-secret-padded-to-32-bytes-pls"
 	loadSecret = "e2e-load-secret-padded-to-32-bytes-pls"
+	authSecret = "e2e-auth-secret-padded-to-32-bytes-pls"
 )
 
 type harness struct {
@@ -66,6 +67,7 @@ func newHarness(t *testing.T) *harness {
 	apiCfg := api.Config{
 		HMACSaveSecret: []byte(saveSecret),
 		HMACLoadSecret: []byte(loadSecret),
+		HMACAuthSecret: []byte(authSecret),
 		OAuthStateTTL:  5 * time.Minute,
 		SessionTTL:     15 * time.Minute,
 	}
@@ -74,7 +76,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(srv.Close)
 	provider.CallbackURL = srv.URL + "/auth/callback"
 
-	client := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret))
+	client := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret), []byte(authSecret))
 
 	return &harness{
 		t: t, clock: fc, idgen: ig, db: d, issuer: issuer, regSvc: regSvc,
@@ -104,7 +106,7 @@ func (h *harness) portalGet(displayName, discordID string) (*http.Client, string
 	h.provider.NextCode = code
 
 	client := h.newBrowserClient()
-	startURL := h.server.URL + "/auth/start?name=" + url.QueryEscape(displayName)
+	startURL := h.client.AuthStartURL(vrcclient.AuthStartParams{DisplayName: displayName})
 	resp, err := client.Get(startURL)
 	if err != nil {
 		h.t.Fatalf("auth start: %v", err)

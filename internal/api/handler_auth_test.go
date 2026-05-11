@@ -38,7 +38,7 @@ func TestAuthStart_RedirectsToProvider(t *testing.T) {
 	provider := oauth.NewFake("https://app/auth/callback", "code-1", "discord-1")
 	h := newServerFull(&fakeSaveStore{}, store, &fakeJWT{}, fakeIDGen{}, provider, nil)
 
-	rr, _ := get(t, h, "/auth/start?name=alice")
+	rr, _ := get(t, h, authStartURL("alice", nil))
 	if rr.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rr.Code)
 	}
@@ -59,10 +59,36 @@ func TestAuthStart_RedirectsToProvider(t *testing.T) {
 func TestAuthStart_RequiresValidName(t *testing.T) {
 	h := newServerFull(&fakeSaveStore{}, &fakeAuthStore{}, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil)
 	for _, bad := range []string{""} {
-		rr, _ := get(t, h, "/auth/start?name="+url.QueryEscape(bad))
+		rr, _ := get(t, h, authStartURL(bad, nil))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("name=%q: status = %d, want 400", bad, rr.Code)
 		}
+	}
+}
+
+func TestAuthStart_MissingSig_Returns400(t *testing.T) {
+	store := &fakeAuthStore{}
+	h := newServerFull(&fakeSaveStore{}, store, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil)
+
+	rr, _ := get(t, h, "/auth/start?display_name=alice")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if len(store.insertCalls) != 0 {
+		t.Errorf("state was inserted despite missing sig")
+	}
+}
+
+func TestAuthStart_InvalidSig_Returns400(t *testing.T) {
+	store := &fakeAuthStore{}
+	h := newServerFull(&fakeSaveStore{}, store, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil)
+
+	rr, _ := get(t, h, "/auth/start?display_name=alice&sig=deadbeef")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if len(store.insertCalls) != 0 {
+		t.Errorf("state was inserted despite invalid sig")
 	}
 }
 
@@ -70,12 +96,24 @@ func TestAuthStart_BannedDisplayName_Rejected(t *testing.T) {
 	store := &fakeAuthStore{dnBanned: true}
 	h := newServerFull(&fakeSaveStore{}, store, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil)
 
-	rr, _ := get(t, h, "/auth/start?name=alice")
+	rr, _ := get(t, h, authStartURL("alice", nil))
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rr.Code)
 	}
 	if len(store.insertCalls) != 0 {
 		t.Errorf("state was inserted despite banned display name")
+	}
+}
+
+// Banned display_name probed without a valid sig must not leak its ban
+// status: the response should be 400 (sig invalid), not 403 (banned).
+func TestAuthStart_SigVerifiedBeforeBanCheck(t *testing.T) {
+	store := &fakeAuthStore{dnBanned: true}
+	h := newServerFull(&fakeSaveStore{}, store, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil)
+
+	rr, _ := get(t, h, "/auth/start?display_name=alice&sig=deadbeef")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (sig check must precede ban check)", rr.Code)
 	}
 }
 
