@@ -175,7 +175,7 @@ func TestAuthPortal_Register_CommitsAfterClick(t *testing.T) {
 	}
 }
 
-func TestAuthCallback_RegisteredSameName_PortalShowsTokenAndReissue(t *testing.T) {
+func TestAuthCallback_RegisteredSameName_PortalShowsReissue(t *testing.T) {
 	regSvc, d, _, _ := newRegSvc(t)
 	provider := oauth.NewFake("https://app/auth/callback", "code-1", "discord-42")
 	h := newServerFull(&fakeSaveStore{}, d, &fakeJWT{}, fakeIDGen{}, provider, regSvc)
@@ -190,10 +190,6 @@ func TestAuthCallback_RegisteredSameName_PortalShowsTokenAndReissue(t *testing.T
 	rr, body := followCallback(t, h, "/auth/callback?code=c-mt&state=mt")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d", rr.Code)
-	}
-	// Current token must be visible directly on the portal (no extra click).
-	if !strings.Contains(body, "jwt-token") {
-		t.Errorf("portal should show current JWT inline; body=%q", body)
 	}
 	// Both Reissue and Unregister must be offered.
 	if !strings.Contains(body, "トークンを再発行") {

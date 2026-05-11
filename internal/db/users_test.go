@@ -13,7 +13,7 @@ func TestUpsertUserAndIssue_NewUser(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "jwt-blob-1", "init"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "init"); err != nil {
 		t.Fatalf("UpsertUserAndIssue: %v", err)
 	}
 
@@ -38,10 +38,10 @@ func TestUpsertUserAndIssue_RenewBlacklistsOldJTI(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "jwt-1", "init"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "jti-1", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice2", "jti-2", "jwt-2", "rename"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice2", "jti-2", "rename"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,35 +59,19 @@ func TestUpsertUserAndIssue_RejectsDisplayNameStolenByOtherDiscordID(t *testing.
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
-	err := d.UpsertUserAndIssue(ctx, "119548486276710401", "alice", "j2", "jwt2", "")
+	err := d.UpsertUserAndIssue(ctx, "119548486276710401", "alice", "j2", "")
 	if !errors.Is(err, db.ErrDisplayNameTaken) {
 		t.Fatalf("err = %v, want ErrDisplayNameTaken", err)
-	}
-}
-
-func TestGetCurrentJWT(t *testing.T) {
-	d := newTestDB(t, nil)
-	ctx := context.Background()
-
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt-blob", ""); err != nil {
-		t.Fatal(err)
-	}
-	gotJWT, gotName, err := d.GetCurrentJWT(ctx, "119548486276710400")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotJWT != "jwt-blob" || gotName != "alice" {
-		t.Errorf("got (%q, %q), want (jwt-blob, alice)", gotJWT, gotName)
 	}
 }
 
 func TestGetUserByDisplayName(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
 	u, err := d.GetUserByDisplayName(ctx, "alice")
@@ -107,10 +91,10 @@ func TestGetUserByDisplayName(t *testing.T) {
 func TestUpsertUserAndIssue_ReissueWithoutRename(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j2", "jwt2", "reissue"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j2", "reissue"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,7 +113,7 @@ func TestUpsertUserAndIssue_ReissueDropsFromRanking(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, jtiPtr("j1")); err != nil {
@@ -137,7 +121,7 @@ func TestUpsertUserAndIssue_ReissueDropsFromRanking(t *testing.T) {
 	}
 
 	// Reissue token — j1 gets blacklisted, so the save tied to j1 becomes invalid.
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j2", "jwt2", "reissue"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j2", "reissue"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +140,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100}, jtiPtr("j1")); err != nil {
@@ -164,7 +148,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 	}
 
 	// Rename: j1 gets blacklisted, new name is "alice2".
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice2", "j2", "jwt2", "rename"); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice2", "j2", "rename"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -180,7 +164,7 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 func TestUnregister_BlacklistsCurrentJTI(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Unregister(ctx, "119548486276710402"); err != nil {
@@ -212,7 +196,7 @@ func TestUnregister_NotRegistered(t *testing.T) {
 func TestReleaseDisplayName(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710403", "victim_name", "j_atk", "jwt", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710403", "victim_name", "j_atk", ""); err != nil {
 		t.Fatal(err)
 	}
 	prior, err := d.ReleaseDisplayName(ctx, "victim_name", "hijack")
@@ -226,7 +210,7 @@ func TestReleaseDisplayName(t *testing.T) {
 		t.Error("attacker jti should be blacklisted")
 	}
 	// users row gone — legitimate owner can now register the name.
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710404", "victim_name", "j_vic", "jwt2", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710404", "victim_name", "j_vic", ""); err != nil {
 		t.Fatalf("legitimate registration after release should succeed: %v", err)
 	}
 }

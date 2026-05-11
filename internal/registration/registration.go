@@ -12,7 +12,7 @@ type Store interface {
 	IsDiscordIDBanned(ctx context.Context, discordID string) (bool, error)
 	IsDisplayNameBanned(ctx context.Context, displayName string) (bool, error)
 	GetUserByDiscordID(ctx context.Context, discordID string) (*db.User, error)
-	UpsertUserAndIssue(ctx context.Context, discordID, displayName, jti, jwt, reason string) error
+	UpsertUserAndIssue(ctx context.Context, discordID, displayName, jti, reason string) error
 }
 
 type Issuer interface {
@@ -74,7 +74,7 @@ func (s *Service) Register(ctx context.Context, discordID, displayName string) (
 		return nil, fmt.Errorf("issue jwt: %w", err)
 	}
 
-	if err := s.store.UpsertUserAndIssue(ctx, discordID, displayName, jti, jwt, "renewed via /auth/register"); err != nil {
+	if err := s.store.UpsertUserAndIssue(ctx, discordID, displayName, jti, "renewed via /auth/register"); err != nil {
 		if errors.Is(err, db.ErrDisplayNameTaken) {
 			return nil, ErrDisplayNameTaken
 		}

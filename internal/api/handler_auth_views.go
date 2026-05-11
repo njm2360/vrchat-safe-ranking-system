@@ -34,7 +34,6 @@ type portalView struct {
 	DiscordUsername  string // empty if the IdP didn't return a username
 	ProposedName     string
 	CurrentName      string // empty if not registered
-	CurrentJWT       string // empty if not registered
 	NameBanned       bool   // proposedName is banned by an administrator
 	NameConflict     bool   // proposedName held by another discord_id
 	RegisterAction   portalAction
@@ -88,12 +87,6 @@ func (s *Server) renderPortal(c echo.Context, sessionToken string, authed *oauth
 	activeUser := current != nil && current.CurrentJTI != ""
 	if activeUser {
 		view.CurrentName = current.DisplayName
-		jwt, _, err := s.authDB.GetCurrentJWT(ctx, authed.ID)
-		if err == nil {
-			view.CurrentJWT = jwt
-		} else if !errors.Is(err, db.ErrUserNotFound) {
-			s.log.Error("portal: lookup jwt", "err", err)
-		}
 	}
 
 	switch {

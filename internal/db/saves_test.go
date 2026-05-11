@@ -27,8 +27,8 @@ func seedIssuedToken(t *testing.T, d *db.DB, jti, discordID, displayName string)
 		t.Fatalf("seed user: %v", err)
 	}
 	if _, err := d.ExecContext(ctx,
-		`INSERT INTO issued_tokens (jti, discord_id, display_name, jwt, issued_at) VALUES (?,?,?,?,?)`,
-		jti, discordID, displayName, "jwt-blob", ts); err != nil {
+		`INSERT INTO issued_tokens (jti, discord_id, display_name, issued_at) VALUES (?,?,?,?)`,
+		jti, discordID, displayName, ts); err != nil {
 		t.Fatalf("seed token: %v", err)
 	}
 	if _, err := d.ExecContext(ctx,

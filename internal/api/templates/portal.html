@@ -84,7 +84,7 @@
       gap: 1rem;
     }
 
-    .action-row + .action-row {
+    .action-row+.action-row {
       margin-top: 0.75rem;
       padding-top: 0.75rem;
       border-top: 1px solid #f3f4f6;
@@ -103,7 +103,8 @@
         <span class="fw-bold fs-6 text-dark">アカウントポータル</span>
         <span class="discord-chip">
           <svg width="14" height="11" viewBox="0 0 14 11" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11.86.97A11.53 11.53 0 0 0 9 .12a8.02 8.02 0 0 0-.35.73 10.66 10.66 0 0 0-3.21 0A8.01 8.01 0 0 0 5.08.12 11.53 11.53 0 0 0 2.2.97C.32 3.88-.2 6.73.06 9.54a11.59 11.59 0 0 0 3.55 1.8 8.53 8.53 0 0 0 .73-1.2 7.55 7.55 0 0 1-1.2-.57l.3-.23a8.26 8.26 0 0 0 7.04 0l.3.23c-.38.22-.79.41-1.21.57a8.55 8.55 0 0 0 .73 1.2 11.58 11.58 0 0 0 3.55-1.8c.3-3.19-.5-6.02-2.14-8.57ZM4.67 7.84c-.69 0-1.26-.63-1.26-1.42s.56-1.42 1.26-1.42c.7 0 1.28.64 1.26 1.42 0 .79-.56 1.42-1.26 1.42Zm4.63 0c-.69 0-1.26-.63-1.26-1.42s.56-1.42 1.26-1.42c.7 0 1.28.64 1.26 1.42 0 .79-.57 1.42-1.26 1.42Z"/>
+            <path
+              d="M11.86.97A11.53 11.53 0 0 0 9 .12a8.02 8.02 0 0 0-.35.73 10.66 10.66 0 0 0-3.21 0A8.01 8.01 0 0 0 5.08.12 11.53 11.53 0 0 0 2.2.97C.32 3.88-.2 6.73.06 9.54a11.59 11.59 0 0 0 3.55 1.8 8.53 8.53 0 0 0 .73-1.2 7.55 7.55 0 0 1-1.2-.57l.3-.23a8.26 8.26 0 0 0 7.04 0l.3.23c-.38.22-.79.41-1.21.57a8.55 8.55 0 0 0 .73 1.2 11.58 11.58 0 0 0 3.55-1.8c.3-3.19-.5-6.02-2.14-8.57ZM4.67 7.84c-.69 0-1.26-.63-1.26-1.42s.56-1.42 1.26-1.42c.7 0 1.28.64 1.26 1.42 0 .79-.56 1.42-1.26 1.42Zm4.63 0c-.69 0-1.26-.63-1.26-1.42s.56-1.42 1.26-1.42c.7 0 1.28.64 1.26 1.42 0 .79-.57 1.42-1.26 1.42Z" />
           </svg>
           {{.DiscordUsername}}
         </span>
@@ -121,7 +122,8 @@
 
     {{if .NameConflict}}
     <div class="alert alert-warning rounded-3 py-2 mb-3" role="alert">
-      <strong></strong> ユーザー名 <code>{{.ProposedName}}</code> は別のDiscordアカウントで登録済みです。Discordアカウントの紐づけを変えたい場合、もしくはこの紐づけに心当たりがない場合は管理者までお問い合わせください。
+      <strong></strong> ユーザー名 <code>{{.ProposedName}}</code>
+      は別のDiscordアカウントで登録済みです。Discordアカウントの紐づけを変えたい場合、もしくはこの紐づけに心当たりがない場合は管理者までお問い合わせください。
     </div>
     {{end}}
 
@@ -134,16 +136,6 @@
         <div class="username-value">{{.CurrentName}}</div>
         <span class="badge rounded-pill text-bg-success" style="font-size:0.68rem;font-weight:600">登録済み</span>
       </div>
-      {{if .CurrentJWT}}
-      <div class="section-label">トークン</div>
-      <div class="token-meta">
-        <span class="text-muted" style="font-size:0.8rem">ワールド内のテキストボックスに貼り付けてください</span>
-        <button onclick="copyToken(this)" class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem;padding:0.2rem 0.65rem">コピー</button>
-      </div>
-      <div id="jwt-token" class="token-block">{{.CurrentJWT}}</div>
-      {{else}}
-      <p class="text-muted mb-0 small">有効なトークンなし（無効化済み）</p>
-      {{end}}
       {{else}}
       <div class="d-flex align-items-center gap-2">
         <div class="username-value">{{.ProposedName}}</div>
@@ -192,18 +184,6 @@
 
   </div>
 
-  <script>
-    function copyToken(btn) {
-      navigator.clipboard.writeText(document.getElementById('jwt-token').textContent.trim()).then(function () {
-        btn.textContent = 'コピーしました';
-        btn.classList.replace('btn-outline-secondary', 'btn-success');
-        setTimeout(function () {
-          btn.textContent = 'コピー';
-          btn.classList.replace('btn-success', 'btn-outline-secondary');
-        }, 2000);
-      });
-    }
-  </script>
 </body>
 
 </html>

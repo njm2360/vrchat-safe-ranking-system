@@ -20,7 +20,7 @@ type fakeStore struct {
 	upsertErr    error
 }
 
-type upsertCall struct{ DiscordID, DisplayName, JTI, JWT, Reason string }
+type upsertCall struct{ DiscordID, DisplayName, JTI, Reason string }
 
 func (f *fakeStore) IsDiscordIDBanned(_ context.Context, _ string) (bool, error) {
 	return f.banned, f.bannedErr
@@ -31,8 +31,8 @@ func (f *fakeStore) IsDisplayNameBanned(_ context.Context, _ string) (bool, erro
 func (f *fakeStore) GetUserByDiscordID(_ context.Context, _ string) (*db.User, error) {
 	return f.getUserRet, f.getUserErr
 }
-func (f *fakeStore) UpsertUserAndIssue(_ context.Context, did, dn, jti, jwt, reason string) error {
-	f.upsertCalls = append(f.upsertCalls, upsertCall{did, dn, jti, jwt, reason})
+func (f *fakeStore) UpsertUserAndIssue(_ context.Context, did, dn, jti, reason string) error {
+	f.upsertCalls = append(f.upsertCalls, upsertCall{did, dn, jti, reason})
 	return f.upsertErr
 }
 

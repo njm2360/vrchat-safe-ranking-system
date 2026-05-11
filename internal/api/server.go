@@ -39,7 +39,6 @@ type AuthStore interface {
 	ConsumeOAuthState(ctx context.Context, state string) (*db.OAuthState, error)
 	IsDiscordIDBanned(ctx context.Context, discordID string) (bool, error)
 	IsDisplayNameRegistered(ctx context.Context, displayName string) (bool, error)
-	GetCurrentJWT(ctx context.Context, discordID string) (jwt, displayName string, err error)
 	GetUserByDiscordID(ctx context.Context, discordID string) (*db.User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (*db.User, error)
 	Unregister(ctx context.Context, discordID string) error

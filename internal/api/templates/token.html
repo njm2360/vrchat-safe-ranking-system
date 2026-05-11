@@ -83,9 +83,13 @@
         <span class="badge rounded-pill text-bg-success" style="font-size:0.68rem;font-weight:600">登録済み</span>
       </div>
       <div class="section-label">トークン</div>
+      <div class="alert alert-warning py-2 mb-2" style="font-size:0.82rem" role="alert">
+        トークンはこのページを閉じると二度と確認できません。
+      </div>
       <div class="token-meta">
         <span class="text-muted" style="font-size:0.8rem">ワールド内のテキストボックスに貼り付けてください</span>
-        <button onclick="copyToken(this)" class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem;padding:0.2rem 0.65rem">コピー</button>
+        <button id="copy-btn" onclick="copyToken(this)" class="btn btn-sm btn-outline-secondary"
+          style="font-size:0.75rem;padding:0.2rem 0.65rem">コピー</button>
       </div>
       <div id="jwt-token" class="token-block">{{.JWT}}</div>
     </div>
@@ -93,8 +97,11 @@
   </div>
 
   <script>
+    var copied = false;
+
     function copyToken(btn) {
       navigator.clipboard.writeText(document.getElementById('jwt-token').textContent.trim()).then(function () {
+        copied = true;
         btn.textContent = 'コピーしました';
         btn.classList.replace('btn-outline-secondary', 'btn-success');
         setTimeout(function () {
@@ -103,6 +110,12 @@
         }, 2000);
       });
     }
+
+    window.addEventListener('beforeunload', function (e) {
+      if (!copied) {
+        e.preventDefault();
+      }
+    });
   </script>
 </body>
 

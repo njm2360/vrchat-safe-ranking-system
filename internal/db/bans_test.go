@@ -75,7 +75,7 @@ func TestBanDisplayName_HidesFromRanking(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
 
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", "jwt1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710400", "alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Save(ctx, "alice", &savedata.Data{Score: 500}, jtiPtr("j1")); err != nil {

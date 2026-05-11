@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS issued_tokens (
     jti          TEXT PRIMARY KEY,
     discord_id   TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    jwt          TEXT NOT NULL,
     issued_at    TIMESTAMP NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_issued_tokens_discord ON issued_tokens(discord_id, issued_at DESC);

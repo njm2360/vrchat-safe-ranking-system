@@ -60,21 +60,7 @@ func (db *DB) scanUser(row *sql.Row) (*User, error) {
 	return &u, nil
 }
 
-func (db *DB) GetCurrentJWT(ctx context.Context, discordID string) (jwt, displayName string, err error) {
-	row := db.QueryRowContext(ctx,
-		`SELECT t.jwt, t.display_name FROM users u
-		 JOIN issued_tokens t ON t.jti = u.current_jti
-		 WHERE u.discord_id = ?`, discordID)
-	if err := row.Scan(&jwt, &displayName); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", "", ErrUserNotFound
-		}
-		return "", "", err
-	}
-	return jwt, displayName, nil
-}
-
-func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, newJTI, newJWT, blacklistReason string) error {
+func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, newJTI, blacklistReason string) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -139,9 +125,9 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 
 	// Record the new token as an immutable audit entry.
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO issued_tokens (jti, discord_id, display_name, jwt, issued_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		newJTI, discordID, displayName, newJWT, now); err != nil {
+		`INSERT INTO issued_tokens (jti, discord_id, display_name, issued_at)
+		 VALUES (?, ?, ?, ?)`,
+		newJTI, discordID, displayName, now); err != nil {
 		return err
 	}
 

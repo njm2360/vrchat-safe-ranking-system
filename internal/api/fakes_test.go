@@ -53,9 +53,6 @@ type fakeAuthStore struct {
 	consumeErr           error
 	banned               bool
 	bannedErr            error
-	currentJWT           string
-	currentDN            string
-	currentJWTErr        error
 	userByDiscordRet     *db.User
 	userByDiscordErr     error
 	userByDisplayNameRet *db.User
@@ -105,9 +102,6 @@ func (f *fakeAuthStore) ConsumeOAuthState(_ context.Context, _ string) (*db.OAut
 }
 func (f *fakeAuthStore) IsDiscordIDBanned(_ context.Context, _ string) (bool, error) {
 	return f.banned, f.bannedErr
-}
-func (f *fakeAuthStore) GetCurrentJWT(_ context.Context, _ string) (string, string, error) {
-	return f.currentJWT, f.currentDN, f.currentJWTErr
 }
 func (f *fakeAuthStore) GetUserByDiscordID(_ context.Context, _ string) (*db.User, error) {
 	return f.userByDiscordRet, f.userByDiscordErr
