@@ -11,16 +11,17 @@ import (
 type LoadResponse struct {
 	Data SaveData `json:"data"`
 
-	// Sig dataのHMAC-SHA256 署名
+	// Sig `HMAC-SHA256(HMAC_LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex。
+	// Udon 側で検証することでロード応答の MITM 改ざんを検知できる。
 	Sig string `json:"sig"`
 }
 
 // RankingRow defines model for RankingRow.
 type RankingRow struct {
-	// DisplayName ユーザー名
+	// DisplayName VRChat 表示名
 	DisplayName string `json:"display_name"`
 
-	// Rank 順位
+	// Rank 順位 (1 始まり)
 	Rank int `json:"rank"`
 
 	// Score スコア
@@ -28,10 +29,19 @@ type RankingRow struct {
 
 	// UpdatedAt 最終更新日時
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// Verified セーブが JWT 認証下で行われたか (= `save_history.jti IS NOT NULL`)。
+	// HMAC だけで保存されたエントリは `false`。
+	Verified bool `json:"verified"`
 }
 
 // SaveData defines model for SaveData.
 type SaveData struct {
+	// GeneratedAt セーブ生成時刻 (RFC3339)。サーバ時刻に対し `-7d ～ +5min` の範囲外は
+	// `/save` で `400` 拒否される。同一 display_name で同一値の重複保存は
+	// `409`。
+	GeneratedAt time.Time `json:"generated_at"`
+
 	// Score スコア
 	Score int64 `json:"score"`
 }
@@ -41,69 +51,73 @@ type AuthCallbackParams struct {
 	// State OAuth state トークン
 	State string `form:"state" json:"state"`
 
-	// Code OAuth認可コード
+	// Code OAuth 認可コード
 	Code string `form:"code" json:"code"`
 }
 
 // GetAuthPortalParams defines parameters for GetAuthPortal.
 type GetAuthPortalParams struct {
-	// Token セッショントークン
-	Token string `form:"token" json:"token"`
+	// VsrsPortalSession /auth/callback で発行されたセッショントークン
+	VsrsPortalSession string `form:"vsrs_portal_session" json:"vsrs_portal_session"`
 }
 
-// AuthRegisterFormdataBody defines parameters for AuthRegister.
-type AuthRegisterFormdataBody struct {
-	// Token セッショントークン
-	Token string `form:"token" json:"token"`
+// AuthRegisterParams defines parameters for AuthRegister.
+type AuthRegisterParams struct {
+	// VsrsPortalSession /auth/callback で発行されたセッショントークン (単発使用)
+	VsrsPortalSession string `form:"vsrs_portal_session" json:"vsrs_portal_session"`
 }
 
 // AuthStartParams defines parameters for AuthStart.
 type AuthStartParams struct {
-	// Name ユーザー名
+	// Name 登録したい VRChat 表示名
 	Name string `form:"name" json:"name"`
+
+	// FakeDiscordId (Mock OAuth モード専用) 18 桁の数字。省略時はランダムな snowflake を生成。
+	FakeDiscordId *string `form:"fake_discord_id,omitempty" json:"fake_discord_id,omitempty"`
+
+	// FakeUsername (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `name` を流用。
+	FakeUsername *string `form:"fake_username,omitempty" json:"fake_username,omitempty"`
 }
 
-// AuthUnregisterFormdataBody defines parameters for AuthUnregister.
-type AuthUnregisterFormdataBody struct {
-	// Token セッショントークン
-	Token string `form:"token" json:"token"`
+// AuthUnregisterParams defines parameters for AuthUnregister.
+type AuthUnregisterParams struct {
+	// VsrsPortalSession /auth/callback で発行されたセッショントークン (単発使用)
+	VsrsPortalSession string `form:"vsrs_portal_session" json:"vsrs_portal_session"`
 }
 
 // LoadDataParams defines parameters for LoadData.
 type LoadDataParams struct {
-	// Jwt 認証JWT
-	Jwt string `form:"jwt" json:"jwt"`
-
-	// DisplayName ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+	// DisplayName VRChat 表示名 (JWT を付ける場合は `display_name` クレームと一致必須)
 	DisplayName string `form:"display_name" json:"display_name"`
 
-	// Sig HMAC-SHA256(display_name)の署名
+	// Sig HMAC-SHA256(display_name) の lowercase hex
 	Sig string `form:"sig" json:"sig"`
+
+	// Jwt 認証 JWT。`display_name` が登録済みの場合は必須
+	Jwt *string `form:"jwt,omitempty" json:"jwt,omitempty"`
 }
 
 // GetRankingParams defines parameters for GetRanking.
 type GetRankingParams struct {
-	// Limit 取得件数(デフォルト 10)
+	// Limit 取得件数 (デフォルト 10)
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Verified `true` のとき JWT 認証付きで保存されたエントリのみを返す。
+	// 省略時は HMAC のみのエントリも含む。
+	Verified *bool `form:"verified,omitempty" json:"verified,omitempty"`
 }
 
 // SaveDataParams defines parameters for SaveData.
 type SaveDataParams struct {
-	// Jwt 認証JWT
-	Jwt string `form:"jwt" json:"jwt"`
-
-	// DisplayName ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+	// DisplayName VRChat 表示名 (JWT を付ける場合は `display_name` クレームと一致必須)
 	DisplayName string `form:"display_name" json:"display_name"`
 
-	// Data セーブデータ(JSON)
+	// Data `SaveData` を JSON 化したもの (URL エンコード必要)。
 	Data string `form:"data" json:"data"`
 
-	// Sig HMAC-SHA256(data, display_name)の署名
+	// Sig HMAC-SHA256(data ‖ 0x00 ‖ display_name) の lowercase hex
 	Sig string `form:"sig" json:"sig"`
+
+	// Jwt 認証 JWT。`display_name` が登録済みの場合は必須
+	Jwt *string `form:"jwt,omitempty" json:"jwt,omitempty"`
 }
-
-// AuthRegisterFormdataRequestBody defines body for AuthRegister for application/x-www-form-urlencoded ContentType.
-type AuthRegisterFormdataRequestBody AuthRegisterFormdataBody
-
-// AuthUnregisterFormdataRequestBody defines body for AuthUnregister for application/x-www-form-urlencoded ContentType.
-type AuthUnregisterFormdataRequestBody AuthUnregisterFormdataBody

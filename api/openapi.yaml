@@ -6,37 +6,62 @@ info:
     VRChat Udon クライアントから呼び出す HTTP API と、
     Discord OAuth による登録フローを提供します。
 
+    ## 認証モデル
+
+    - `/save` `/load`はHMAC署名で保護される。`jwt`クエリはオプション。
+    - `display_name`がDBに未登録ならJWTなしで通る (HMAC のみ検証)。
+    - `display_name`が登録済みならJWT必須。`display_name`がJWT
+      クレームと一致し、JTIが当該ユーザーの現行JTIかつブラックリスト未登録
+      でなければ`401`。
+    - HMAC秘密鍵はUdon側に埋め込まれており抽出可能。クエリ書き換えや
+      ロード応答MITM改ざんを検知するライト層対策であり、鍵抽出を伴う
+      高度な攻撃はスコープ外。登録済みDisplayNameはJWTで本人検証
+      されるため、鍵漏洩時も正規ユーザーは自分のスコアを守れる。
+
+    ## HMAC 仕様
+
+    複数パートは 1 バイトの `0x00` で区切って連結する。
+
+    | 場面 | メッセージ | 鍵 |
+    | ---- | ---------- | --- |
+    | `/save` リクエスト sig | `<data raw bytes> ‖ 0x00 ‖ <display_name bytes>` | `HMAC_SAVE_SECRET` |
+    | `/load` リクエスト sig | `<display_name bytes>` | `HMAC_LOAD_SECRET` |
+    | `/load` レスポンス sig | レスポンス内 `data` の raw bytes | `HMAC_LOAD_SECRET` |
+
 paths:
   /save:
     get:
       operationId: SaveData
       summary: セーブデータを保存する
-      description: HMAC-SHA256署名付きのセーブデータをサーバーに記録します。
+      description: |
+        HMAC-SHA256 署名付きのセーブデータをサーバーに記録します。
+        `jwt` は登録済み `display_name` に対してのみ必須。
       parameters:
-        - name: jwt
-          in: query
-          required: true
-          schema:
-            type: string
-          description: 認証JWT
         - name: display_name
           in: query
           required: true
           schema:
             type: string
-          description: ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+          description: VRChat 表示名 (JWT を付ける場合は `display_name` クレームと一致必須)
         - name: data
           in: query
           required: true
           schema:
             type: string
-          description: セーブデータ(JSON)
+          description: |
+            `SaveData` を JSON 化したもの (URL エンコード必要)。
         - name: sig
           in: query
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(data, display_name)の署名
+          description: HMAC-SHA256(data ‖ 0x00 ‖ display_name) の lowercase hex
+        - name: jwt
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 認証 JWT。`display_name` が登録済みの場合は必須
       responses:
         "200":
           description: 保存成功
@@ -46,9 +71,15 @@ paths:
                 type: string
                 example: success
         "400":
-          description: パラメータ不正(display_name / data / sig 未指定)、sig 検証失敗、またはデータ形式エラー
+          description: |
+            パラメータ不正 (display_name / data / sig 未指定または不正)、
+            sig 検証失敗、`data` の JSON パース失敗、
+            または `generated_at` が許容ウィンドウ外
         "401":
-          description: JWTが無効・失効済み、またはdisplay_nameがJWTと不一致
+          description: |
+            display_name が登録済みで JWT 未指定 / 無効 / 失効 / クレームと不一致
+        "409":
+          description: 同一 display_name で同一 generated_at が既に保存済み
         "500":
           description: サーバー内部エラー
 
@@ -56,26 +87,29 @@ paths:
     get:
       operationId: LoadData
       summary: 最新のセーブデータを取得する
-      description: ログインユーザーの最新セーブデータとHMAC署名を返します。
+      description: |
+        指定 `display_name` の最新セーブデータと、レスポンスボディの完全性を
+        証明する HMAC 署名を返します。
+        `jwt` は登録済み `display_name` に対してのみ必須。
       parameters:
-        - name: jwt
-          in: query
-          required: true
-          schema:
-            type: string
-          description: 認証JWT
         - name: display_name
           in: query
           required: true
           schema:
             type: string
-          description: ユーザー名(JWTのdisplay_nameクレームと一致する必要あり)
+          description: VRChat 表示名 (JWT を付ける場合は `display_name` クレームと一致必須)
         - name: sig
           in: query
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(display_name)の署名
+          description: HMAC-SHA256(display_name) の lowercase hex
+        - name: jwt
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 認証 JWT。`display_name` が登録済みの場合は必須
       responses:
         "200":
           description: セーブデータと署名
@@ -84,9 +118,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoadResponse"
         "400":
-          description: パラメータ不正(display_name / sig 未指定)またはsig検証失敗
+          description: パラメータ不正 (display_name / sig 未指定) または sig 検証失敗
         "401":
-          description: JWTが無効・失効済み、または display_nameがJWTと不一致
+          description: |
+            display_name が登録済みで JWT 未指定 / 無効 / 失効 / クレームと不一致
         "404":
           description: セーブデータが存在しない
         "500":
@@ -105,16 +140,27 @@ paths:
             default: 10
             minimum: 1
             maximum: 1000
-          description: 取得件数(デフォルト 10)
+          description: 取得件数 (デフォルト 10)
+        - name: verified
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |
+            `true` のとき JWT 認証付きで保存されたエントリのみを返す。
+            省略時は HMAC のみのエントリも含む。
       responses:
         "200":
-          description: ランキング一覧
+          description: ランキング一覧 (該当なしのときは空配列)
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/RankingRow"
+        "400":
+          description: limit が範囲外、または verified が `true` / `false` 以外
         "500":
           description: サーバー内部エラー
 
@@ -124,27 +170,46 @@ paths:
       summary: OAuth 認証フローを開始する
       description: |
         Discord OAuth フローを開始し、プロバイダの認可ページへリダイレクトします。
-        MockOAuth モードが有効な場合は /auth/mock-login へリダイレクトします。
+        MockOAuth モードが有効な場合は `/auth/mock-login` へリダイレクトします。
       parameters:
         - name: name
           in: query
           required: true
           schema:
             type: string
-          description: ユーザー名
+          description: 登録したい VRChat 表示名
+        - name: fake_discord_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            (Mock OAuth モード専用) 18 桁の数字。省略時はランダムな snowflake を生成。
+        - name: fake_username
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `name` を流用。
       responses:
         "302":
-          description: OAuthプロバイダへリダイレクト
+          description: OAuth プロバイダ (または `/auth/mock-login`) へリダイレクト
         "400":
-          description: 名前が未指定または無効な文字を含む
+          description: 名前が未指定または無効な文字を含む / mock パラメータが不正
+        "403":
+          description: 表示名が BAN 済
+        "500":
+          description: サーバー内部エラー
 
   /auth/callback:
     get:
       operationId: AuthCallback
-      summary: OAuthコールバックを処理する
+      summary: OAuth コールバックを処理する
       description: |
-        OAuthプロバイダからのコールバックを受け取り、
-        ユーザー情報を取得してポータルページへリダイレクトします。
+        OAuth プロバイダからのコールバックを受け取り、Discord ユーザー情報を取得して
+        単発使用のセッション Cookie (`vsrs_portal_session`, Path=`/auth`, HttpOnly)
+        を発行した上で `/auth/portal` へ 303 リダイレクトします。
       parameters:
         - name: state
           in: query
@@ -157,72 +222,81 @@ paths:
           required: true
           schema:
             type: string
-          description: OAuth認可コード
+          description: OAuth 認可コード
       responses:
         "303":
-          description: ポータルページへリダイレクト
+          description: |
+            `/auth/portal` へリダイレクト。`Set-Cookie: vsrs_portal_session=...` を伴う。
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: vsrs_portal_session=<token>; Path=/auth; HttpOnly; SameSite=Lax
         "400":
           description: state / code が不正または期限切れ
         "403":
-          description: アカウントが利用禁止
+          description: Discord アカウントが BAN 済
+        "429":
+          description: OAuth プロバイダ側のレート制限
         "502":
+          description: Discord 認証に失敗
+        "500":
           description: サーバー内部エラー
 
   /auth/portal:
     get:
       operationId: GetAuthPortal
       summary: 認証ポータルページを表示する
-      description: セッショントークンに対応するポータルHTMLを返します。
+      description: |
+        `vsrs_portal_session` Cookie を検証し、当該ユーザーの登録状態に応じた
+        ポータル HTML を返します。Cookie は消費しないのでリロード可。
       parameters:
-        - name: token
-          in: query
+        - in: cookie
+          name: vsrs_portal_session
           required: true
           schema:
             type: string
-          description: セッショントークン
+          description: /auth/callback で発行されたセッショントークン
       responses:
         "200":
-          description: ポータルHTMLページ
+          description: ポータル HTML ページ
           content:
             text/html:
               schema:
                 type: string
         "400":
-          description: トークンが未指定、不明、または期限切れ
-
+          description: Cookie 未送信 / 不明 / 期限切れ
+        "500":
+          description: サーバー内部エラー
 
   /auth/register:
     post:
       operationId: AuthRegister
       summary: 登録を実行する
       description: |
-        セッショントークンを消費して VRChat 表示名とアカウントを紐付けます。
-        既存の登録がある場合は JWT を再発行します(旧 JWT は失効)。
-        成功すると JWT を含む結果 HTML ページを返します。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [token]
-              properties:
-                token:
-                  type: string
-                  description: セッショントークン
+        `vsrs_portal_session` Cookie を **消費** して VRChat 表示名と Discord
+        アカウントを紐付けます。既存の登録がある場合は JWT を再発行します
+        (旧 JWT は失効)。成功すると JWT を含む結果 HTML ページを返します。
+      parameters:
+        - in: cookie
+          name: vsrs_portal_session
+          required: true
+          schema:
+            type: string
+          description: /auth/callback で発行されたセッショントークン (単発使用)
       responses:
         "200":
-          description: 結果HTMLページ(登録完了 / トークン再発行)
+          description: 結果 HTML ページ (登録完了 / トークン再発行)
           content:
             text/html:
               schema:
                 type: string
         "400":
-          description: リクエスト不正またはセッション期限切れ
+          description: Cookie 未送信 / 不明 / 期限切れ
         "403":
-          description: アカウントが利用禁止
+          description: Discord アカウントまたは表示名が BAN 済
         "409":
-          description: ユーザー名が別アカウントで使用中
+          description: 表示名が別アカウントで使用中
         "500":
           description: サーバー内部エラー
 
@@ -231,21 +305,17 @@ paths:
       operationId: AuthUnregister
       summary: 登録解除を実行する
       description: |
-        セッショントークンを消費して登録を解除します。
+        `vsrs_portal_session` Cookie を **消費** して登録を解除します。
         現在の JWT を失効させ、ランキングから削除します。
         users レコードは保持され、表示名の予約は維持されます。
         成功すると結果 HTML ページを返します。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required: [token]
-              properties:
-                token:
-                  type: string
-                  description: セッショントークン
+      parameters:
+        - in: cookie
+          name: vsrs_portal_session
+          required: true
+          schema:
+            type: string
+          description: /auth/callback で発行されたセッショントークン (単発使用)
       responses:
         "200":
           description: 登録解除完了 HTML ページ
@@ -254,9 +324,9 @@ paths:
               schema:
                 type: string
         "400":
-          description: リクエスト不正またはセッション期限切れ
+          description: Cookie 未送信 / 不明 / 期限切れ
         "403":
-          description: アカウントが利用禁止
+          description: Discord アカウントが BAN 済
         "404":
           description: 登録されていないアカウント
         "500":
@@ -266,12 +336,19 @@ components:
   schemas:
     SaveData:
       type: object
-      required: [score]
+      required: [score, generated_at]
       properties:
         score:
           type: integer
           format: int64
           description: スコア
+        generated_at:
+          type: string
+          format: date-time
+          description: |
+            セーブ生成時刻 (RFC3339)。サーバ時刻に対し `-7d ～ +5min` の範囲外は
+            `/save` で `400` 拒否される。同一 display_name で同一値の重複保存は
+            `409`。
 
     LoadResponse:
       type: object
@@ -281,18 +358,20 @@ components:
           $ref: "#/components/schemas/SaveData"
         sig:
           type: string
-          description: dataのHMAC-SHA256 署名
+          description: |
+            `HMAC-SHA256(HMAC_LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex。
+            Udon 側で検証することでロード応答の MITM 改ざんを検知できる。
 
     RankingRow:
       type: object
-      required: [rank, display_name, score, updated_at]
+      required: [rank, display_name, score, updated_at, verified]
       properties:
         rank:
           type: integer
-          description: 順位
+          description: 順位 (1 始まり)
         display_name:
           type: string
-          description: ユーザー名
+          description: VRChat 表示名
         score:
           type: integer
           format: int64
@@ -301,3 +380,8 @@ components:
           type: string
           format: date-time
           description: 最終更新日時
+        verified:
+          type: boolean
+          description: |
+            セーブが JWT 認証下で行われたか (= `save_history.jti IS NOT NULL`)。
+            HMAC だけで保存されたエントリは `false`。
