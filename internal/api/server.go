@@ -60,9 +60,9 @@ type IDGen interface {
 
 // Config carries the runtime parameters the handlers consult.
 type Config struct {
-	HMACSaveSecret []byte
-	HMACLoadSecret []byte
-	HMACAuthSecret []byte
+	SaveSecret    []byte
+	LoadSecret    []byte
+	AuthSecret    []byte
 	OAuthStateTTL  time.Duration
 	SessionTTL     time.Duration
 	MockOAuth      bool

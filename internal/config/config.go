@@ -12,15 +12,15 @@ import (
 )
 
 type Config struct {
-	APIAddr        string
-	BaseURL        string
-	DBPath         string
-	JWTSecret      []byte
-	HMACSaveSecret []byte
-	HMACLoadSecret []byte
-	HMACAuthSecret []byte
-	OAuthStateTTL  time.Duration
-	SessionTTL     time.Duration
+	APIAddr       string
+	BaseURL       string
+	DBPath        string
+	JWTSecret     []byte
+	SaveSecret    []byte
+	LoadSecret    []byte
+	AuthSecret    []byte
+	OAuthStateTTL time.Duration
+	SessionTTL    time.Duration
 
 	DiscordClientID     string
 	DiscordClientSecret string
@@ -42,9 +42,9 @@ func Load() (*Config, error) {
 		BaseURL:             getEnv("BASE_URL", "http://localhost:8100"),
 		DBPath:              getEnv("DB_PATH", "./data/vrc.db"),
 		JWTSecret:           []byte(os.Getenv("JWT_SECRET")),
-		HMACSaveSecret:      []byte(os.Getenv("HMAC_SAVE_SECRET")),
-		HMACLoadSecret:      []byte(os.Getenv("HMAC_LOAD_SECRET")),
-		HMACAuthSecret:      []byte(os.Getenv("HMAC_AUTH_SECRET")),
+		SaveSecret:          []byte(os.Getenv("SAVE_SECRET")),
+		LoadSecret:          []byte(os.Getenv("LOAD_SECRET")),
+		AuthSecret:          []byte(os.Getenv("AUTH_SECRET")),
 		OAuthStateTTL:       getEnvDuration("OAUTH_STATE_TTL", 5*time.Minute),
 		SessionTTL:          getEnvDuration("SESSION_TTL", 30*time.Minute),
 		DiscordClientID:     os.Getenv("DISCORD_CLIENT_ID"),
@@ -60,14 +60,14 @@ func Load() (*Config, error) {
 	if len(c.JWTSecret) < 16 {
 		return nil, errors.New("JWT_SECRET must be set and at least 16 bytes")
 	}
-	if len(c.HMACSaveSecret) < 16 {
-		return nil, errors.New("HMAC_SAVE_SECRET must be set and at least 16 bytes")
+	if len(c.SaveSecret) != 16 {
+		return nil, errors.New("SAVE_SECRET must be exactly 16 bytes")
 	}
-	if len(c.HMACLoadSecret) < 16 {
-		return nil, errors.New("HMAC_LOAD_SECRET must be set and at least 16 bytes")
+	if len(c.LoadSecret) != 16 {
+		return nil, errors.New("LOAD_SECRET must be exactly 16 bytes")
 	}
-	if len(c.HMACAuthSecret) < 16 {
-		return nil, errors.New("HMAC_AUTH_SECRET must be set and at least 16 bytes")
+	if len(c.AuthSecret) != 16 {
+		return nil, errors.New("AUTH_SECRET must be exactly 16 bytes")
 	}
 	switch c.OAuthMode {
 	case OAuthModeDiscord:

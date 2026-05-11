@@ -21,7 +21,7 @@ const (
 	authSecret = "auth-secret-test"
 )
 
-func TestSaveURLIncludesValidHMAC(t *testing.T) {
+func TestSaveURLIncludesValidSig(t *testing.T) {
 	c := vrcclient.New("https://x", []byte(saveSecret), []byte(loadSecret), []byte(authSecret))
 	u, err := c.SaveURL(vrcclient.SaveParams{Data: &savedata.Data{Score: 1234, GeneratedAt: time.Unix(9999, 0).UTC()}, JWT: "tok", DisplayName: "testuser"})
 	if err != nil {

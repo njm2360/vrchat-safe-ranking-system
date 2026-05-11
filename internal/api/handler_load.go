@@ -25,7 +25,7 @@ func (s *Server) handleLoad(c echo.Context) error {
 	if sigHex == "" {
 		return c.String(http.StatusBadRequest, "missing sig")
 	}
-	if !auth.VerifyHex(s.cfg.HMACLoadSecret, sigHex, []byte(displayName)) {
+	if !auth.VerifyHex(s.cfg.LoadSecret, sigHex, []byte(displayName)) {
 		return c.String(http.StatusBadRequest, "invalid sig")
 	}
 
@@ -62,7 +62,7 @@ func (s *Server) handleLoad(c echo.Context) error {
 		s.log.Error("marshal savedata", "err", err)
 		return c.String(http.StatusInternalServerError, "internal error")
 	}
-	sig := auth.SignHex(s.cfg.HMACLoadSecret, dataBytes)
+	sig := auth.SignHex(s.cfg.LoadSecret, dataBytes)
 
 	return c.JSONBlob(http.StatusOK, fmt.Appendf(nil, `{"data":%s,"sig":%q}`, dataBytes, sig))
 }

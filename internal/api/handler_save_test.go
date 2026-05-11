@@ -30,7 +30,7 @@ func saveURL(score int64, generatedAt time.Time, displayName, jwt, sigOverride s
 	if sigOverride != "" {
 		q.Set("sig", sigOverride)
 	} else {
-		q.Set("sig", auth.SignHex([]byte("save-secret"), body, []byte(displayName)))
+		q.Set("sig", auth.SignHex(testSaveSecret, body, []byte(displayName)))
 	}
 	return "/save?" + q.Encode()
 }
@@ -124,7 +124,7 @@ func TestSave_BlacklistedJWT_Rejected(t *testing.T) {
 	}
 }
 
-func TestSave_RejectsBadHMAC(t *testing.T) {
+func TestSave_RejectsBadSig(t *testing.T) {
 	saves := &fakeSaveStore{}
 	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
 	h := newServer(saves, jwt, fakeIDGen{})
@@ -174,7 +174,7 @@ func TestSave_RejectsInvalidJSON(t *testing.T) {
 	q.Set("data", bad)
 	q.Set("display_name", "alice")
 	q.Set("jwt", "tok")
-	q.Set("sig", auth.SignHex([]byte("save-secret"), []byte(bad), []byte("alice")))
+	q.Set("sig", auth.SignHex(testSaveSecret, []byte(bad), []byte("alice")))
 	rr, _ := get(t, h, "/save?"+q.Encode())
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rr.Code)

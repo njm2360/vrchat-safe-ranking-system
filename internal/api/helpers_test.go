@@ -15,7 +15,11 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
 )
 
-var testAuthSecret = []byte("auth-secret")
+var (
+	testSaveSecret = []byte("save-secret-16by")
+	testLoadSecret = []byte("load-secret-16by")
+	testAuthSecret = []byte("auth-secret-16by")
+)
 
 // authStartURL builds a signed /auth/start URL for tests. extra carries
 // optional mock-mode query params (fake_discord_id, fake_username).
@@ -37,23 +41,23 @@ func newServer(saves api.SaveStore, jwt api.JWTVerifier, idgen api.IDGen) http.H
 
 func newServerFull(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifier, idgen api.IDGen, provider oauth.Provider, regSvc *registration.Service) http.Handler {
 	cfg := api.Config{
-		HMACSaveSecret: []byte("save-secret"),
-		HMACLoadSecret: []byte("load-secret"),
-		HMACAuthSecret: testAuthSecret,
-		OAuthStateTTL:  5 * time.Minute,
-		SessionTTL:     15 * time.Minute,
+		SaveSecret:    testSaveSecret,
+		LoadSecret:    testLoadSecret,
+		AuthSecret:    testAuthSecret,
+		OAuthStateTTL: 5 * time.Minute,
+		SessionTTL:    15 * time.Minute,
 	}
 	return api.New(cfg, saves, authDB, jwt, idgen, provider, regSvc, nil).Handler()
 }
 
 func newMockServer(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifier, idgen api.IDGen, regSvc *registration.Service) http.Handler {
 	cfg := api.Config{
-		HMACSaveSecret: []byte("save-secret"),
-		HMACLoadSecret: []byte("load-secret"),
-		HMACAuthSecret: testAuthSecret,
-		OAuthStateTTL:  5 * time.Minute,
-		SessionTTL:     15 * time.Minute,
-		MockOAuth:      true,
+		SaveSecret:    testSaveSecret,
+		LoadSecret:    testLoadSecret,
+		AuthSecret:    testAuthSecret,
+		OAuthStateTTL: 5 * time.Minute,
+		SessionTTL:    15 * time.Minute,
+		MockOAuth:     true,
 	}
 	return api.New(cfg, saves, authDB, jwt, idgen, oauth.NewFakeEcho(), regSvc, nil).Handler()
 }

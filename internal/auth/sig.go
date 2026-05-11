@@ -1,20 +1,25 @@
 package auth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
+
+	"github.com/dchest/siphash"
 )
 
+const SigKeySize = 16
+
+const sigTagSize = 8
+
 func signParts(key []byte, parts [][]byte) []byte {
-	mac := hmac.New(sha256.New, key)
+	h := siphash.New(key)
 	for i, p := range parts {
 		if i > 0 {
-			mac.Write([]byte{0})
+			h.Write([]byte{0})
 		}
-		mac.Write(p)
+		h.Write(p)
 	}
-	return mac.Sum(nil)
+	return h.Sum(nil)
 }
 
 func SignHex(key []byte, parts ...[]byte) string {
@@ -22,12 +27,12 @@ func SignHex(key []byte, parts ...[]byte) string {
 }
 
 func VerifyHex(key []byte, gotHex string, parts ...[]byte) bool {
-	if len(gotHex) != sha256.Size*2 {
+	if len(gotHex) != sigTagSize*2 {
 		return false
 	}
 	want, err := hex.DecodeString(gotHex)
 	if err != nil {
 		return false
 	}
-	return hmac.Equal(want, signParts(key, parts))
+	return subtle.ConstantTimeCompare(want, signParts(key, parts)) == 1
 }

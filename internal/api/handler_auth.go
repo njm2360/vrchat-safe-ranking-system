@@ -59,7 +59,7 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 	if sigHex == "" {
 		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
 	}
-	if !auth.VerifyHex(s.cfg.HMACAuthSecret, sigHex, []byte(proposedName)) {
+	if !auth.VerifyHex(s.cfg.AuthSecret, sigHex, []byte(proposedName)) {
 		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
 	}
 

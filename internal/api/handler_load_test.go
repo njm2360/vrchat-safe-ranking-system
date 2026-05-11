@@ -17,7 +17,7 @@ func loadURL(displayName, jwt string) string {
 	q := url.Values{}
 	if displayName != "" {
 		q.Set("display_name", displayName)
-		q.Set("sig", auth.SignHex([]byte("load-secret"), []byte(displayName)))
+		q.Set("sig", auth.SignHex(testLoadSecret, []byte(displayName)))
 	}
 	if jwt != "" {
 		q.Set("jwt", jwt)
@@ -45,7 +45,7 @@ func TestLoad_Success(t *testing.T) {
 	if string(resp.Data) != `{"score":1234,"generated_at":"1970-01-01T02:46:39Z"}` {
 		t.Errorf("data = %q, want canonical JSON", string(resp.Data))
 	}
-	if !auth.VerifyHex([]byte("load-secret"), resp.Sig, resp.Data) {
+	if !auth.VerifyHex(testLoadSecret, resp.Sig, resp.Data) {
 		t.Errorf("response sig does not verify against load secret over data bytes")
 	}
 }
@@ -66,7 +66,7 @@ func TestLoad_Anonymous_Unregistered_OK(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !auth.VerifyHex([]byte("load-secret"), resp.Sig, resp.Data) {
+	if !auth.VerifyHex(testLoadSecret, resp.Sig, resp.Data) {
 		t.Error("response sig does not verify")
 	}
 }
@@ -129,7 +129,7 @@ func TestLoad_MissingDisplayName_Rejected(t *testing.T) {
 	}
 }
 
-func TestLoad_RejectsBadHMAC(t *testing.T) {
+func TestLoad_RejectsBadSig(t *testing.T) {
 	saves := &fakeSaveStore{latestRet: &db.SaveEntry{Data: &savedata.Data{Score: 1}}}
 	jwtV := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
 	h := newServer(saves, jwtV, fakeIDGen{})

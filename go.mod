@@ -3,10 +3,12 @@ module github.com/njm2360/vrchat-ranking-system
 go 1.26.2
 
 require (
+	github.com/dchest/siphash v1.2.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.15.2
+	golang.org/x/sync v0.20.0
 	modernc.org/sqlite v1.50.0
 )
 
@@ -21,7 +23,6 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

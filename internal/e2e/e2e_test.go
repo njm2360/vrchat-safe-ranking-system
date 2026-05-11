@@ -31,9 +31,9 @@ import (
 
 const (
 	jwtSecret  = "e2e-jwt-secret-padded-to-32-bytes-yes"
-	saveSecret = "e2e-save-secret-padded-to-32-bytes-pls"
-	loadSecret = "e2e-load-secret-padded-to-32-bytes-pls"
-	authSecret = "e2e-auth-secret-padded-to-32-bytes-pls"
+	saveSecret = "e2e-save-key-16b"
+	loadSecret = "e2e-load-key-16b"
+	authSecret = "e2e-auth-key-16b"
 )
 
 type harness struct {
@@ -65,11 +65,11 @@ func newHarness(t *testing.T) *harness {
 	provider := oauth.NewFake("placeholder", "default-code", "default-discord")
 
 	apiCfg := api.Config{
-		HMACSaveSecret: []byte(saveSecret),
-		HMACLoadSecret: []byte(loadSecret),
-		HMACAuthSecret: []byte(authSecret),
-		OAuthStateTTL:  5 * time.Minute,
-		SessionTTL:     15 * time.Minute,
+		SaveSecret:    []byte(saveSecret),
+		LoadSecret:    []byte(loadSecret),
+		AuthSecret:    []byte(authSecret),
+		OAuthStateTTL: 5 * time.Minute,
+		SessionTTL:    15 * time.Minute,
 	}
 	silentLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(api.New(apiCfg, d, d, issuer, ig, provider, regSvc, silentLog).Handler())

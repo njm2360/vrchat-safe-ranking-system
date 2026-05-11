@@ -28,11 +28,11 @@ func TestSecurityHeaders_BaselineOnEveryResponse(t *testing.T) {
 
 func TestSecurityHeaders_HSTSGatedOnHTTPS(t *testing.T) {
 	cfg := api.Config{
-		HMACSaveSecret: []byte("save-secret"),
-		HMACLoadSecret: []byte("load-secret"),
-		HMACAuthSecret: []byte("auth-secret"),
-		OAuthStateTTL:  5 * time.Minute,
-		SessionTTL:     15 * time.Minute,
+		SaveSecret:    testSaveSecret,
+		LoadSecret:    testLoadSecret,
+		AuthSecret:    testAuthSecret,
+		OAuthStateTTL: 5 * time.Minute,
+		SessionTTL:    15 * time.Minute,
 	}
 	// CookieSecure=false → no HSTS (we may be on HTTP)
 	h := api.New(cfg, &fakeSaveStore{}, &fakeAuthStore{}, &fakeJWT{}, fakeIDGen{}, oauth.NewFake("", "c", "d"), nil, nil).Handler()

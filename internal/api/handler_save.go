@@ -29,7 +29,7 @@ func (s *Server) handleSave(c echo.Context) error {
 	if sigHex == "" {
 		return c.String(http.StatusBadRequest, "missing sig")
 	}
-	if !auth.VerifyHex(s.cfg.HMACSaveSecret, sigHex, []byte(dataStr), []byte(displayName)) {
+	if !auth.VerifyHex(s.cfg.SaveSecret, sigHex, []byte(dataStr), []byte(displayName)) {
 		return c.String(http.StatusBadRequest, "invalid sig")
 	}
 
