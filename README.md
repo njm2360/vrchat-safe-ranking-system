@@ -135,6 +135,10 @@ go run ./cmd/vrcsim load --display-name alice --jwt 'eyJ...' --print-url
 ban / unban / whois / DisplayName 解放 / JTI 無効化はサーバホスト上の CLI で行う。
 DB ファイル (`DB_PATH`) に直接アクセスするので、API と同じホストで実行すること。
 
+`release-name` は本人が Discord にアクセスできずセルフ解除できない場合の救済手段。
+問い合わせがあった場合はその人が本当にそのユーザー名の所持者であるか不明なため、必ず本人確認をすること。
+(例)ワールド内で実際に会う、Bioに一時的に認証コードを貼ってもらう等
+
 ```bash
 # Discord ID で BAN (BAN/UNBAN は --name でも指定可)
 go run ./cmd/admin ban --discord-id 123456789012345678 --reason 不正
