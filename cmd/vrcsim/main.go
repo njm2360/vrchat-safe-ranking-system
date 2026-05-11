@@ -151,12 +151,12 @@ func runE2E(ctx context.Context, cfg *config.Config, client *vrcclient.Client, a
 	fmt.Println("   JWT:", res.JWT)
 
 	fmt.Println("=> save")
-	body, err := client.Save(ctx, vrcclient.SaveParams{Data: &savedata.Data{Score: *score, GeneratedAt: time.Now().UTC()}, JWT: res.JWT})
+	body, err := client.Save(ctx, vrcclient.SaveParams{Data: &savedata.Data{Score: *score, GeneratedAt: time.Now().UTC()}, JWT: res.JWT, DisplayName: *name})
 	exitIf(err)
 	fmt.Println("   ", body)
 
 	fmt.Println("=> load")
-	loaded, err := client.Load(ctx, vrcclient.LoadParams{JWT: res.JWT})
+	loaded, err := client.Load(ctx, vrcclient.LoadParams{JWT: res.JWT, DisplayName: *name})
 	exitIf(err)
 	if loaded == nil {
 		fmt.Println("   (no save)")
