@@ -207,6 +207,31 @@ func TestE2E_HappyPath(t *testing.T) {
 	}
 }
 
+// Unregister fully deletes the users row so the display_name is released and
+// a different Discord account can claim it on the next OAuth round.
+func TestE2E_UnregisterReleasesDisplayName(t *testing.T) {
+	h := newHarness(t)
+
+	jwt1 := h.register("discord-1", "alice")
+	_, _ = h.client.Save(context.Background(), vrcclient.SaveParams{Data: &savedata.Data{Score: 100, GeneratedAt: time.Now().Add(-time.Minute).UTC()}, JWT: jwt1, DisplayName: "alice"})
+
+	h.portalAct("alice", "discord-1", "unregister")
+
+	if registered, _ := h.db.IsDisplayNameRegistered(context.Background(), "alice"); registered {
+		t.Fatal("alice should be unregistered after self-unregister")
+	}
+	rows, _ := h.db.Ranking(context.Background(), 10, false)
+	if len(rows) != 0 {
+		t.Errorf("ranking should be empty after unregister, got %+v", rows)
+	}
+
+	// Another Discord can now register the freed name.
+	jwt2 := h.register("discord-2", "alice")
+	if jwt2 == "" || jwt2 == jwt1 {
+		t.Errorf("expected fresh JWT for new owner, got %q (jwt1=%q)", jwt2, jwt1)
+	}
+}
+
 func TestE2E_RenameInvalidatesOldEntry(t *testing.T) {
 	h := newHarness(t)
 

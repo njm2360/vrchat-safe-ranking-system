@@ -25,7 +25,7 @@ type User struct {
 
 func (db *DB) GetUserByDiscordID(ctx context.Context, discordID string) (*User, error) {
 	return db.scanUser(db.QueryRowContext(ctx,
-		`SELECT discord_id, display_name, COALESCE(current_jti, ''), created_at, updated_at
+		`SELECT discord_id, display_name, current_jti, created_at, updated_at
 		 FROM users WHERE discord_id = ?`, discordID))
 }
 
@@ -44,7 +44,7 @@ func (db *DB) IsDisplayNameRegistered(ctx context.Context, displayName string) (
 
 func (db *DB) GetUserByDisplayName(ctx context.Context, displayName string) (*User, error) {
 	return db.scanUser(db.QueryRowContext(ctx,
-		`SELECT discord_id, display_name, COALESCE(current_jti, ''), created_at, updated_at
+		`SELECT discord_id, display_name, current_jti, created_at, updated_at
 		 FROM users WHERE display_name = ?`, displayName))
 }
 
@@ -80,9 +80,8 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return ErrDisplayNameTaken
 	}
 
-	// Snapshot the current state before any mutation.
-	var oldJTI sql.NullString
-	var oldDisplayName string
+	// Snapshot the current state for the existing user (if any) before mutation.
+	var oldJTI, oldDisplayName string
 	err = tx.QueryRowContext(ctx,
 		`SELECT current_jti, display_name FROM users WHERE discord_id = ?`, discordID).Scan(&oldJTI, &oldDisplayName)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -91,16 +90,23 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 
 	now := db.nowTS()
 
-	// Upsert the user row with current_jti = NULL first; issued_tokens will be
-	// inserted next and current_jti pointed at it afterwards.
+	// Record the new token immutably first; users.current_jti will reference it.
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO issued_tokens (jti, discord_id, display_name, issued_at)
+		 VALUES (?, ?, ?, ?)`,
+		newJTI, discordID, displayName, now); err != nil {
+		return err
+	}
+
+	// Upsert the user row, pointing current_jti directly at the new token.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO users (discord_id, display_name, current_jti, created_at, updated_at)
-		 VALUES (?, ?, NULL, ?, ?)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(discord_id) DO UPDATE SET
 		   display_name = excluded.display_name,
-		   current_jti  = NULL,
+		   current_jti  = excluded.current_jti,
 		   updated_at   = excluded.updated_at`,
-		discordID, displayName, now, now); err != nil {
+		discordID, displayName, newJTI, now, now); err != nil {
 		var sqliteErr *sqlite.Error
 		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
 			return ErrDisplayNameTaken
@@ -108,12 +114,12 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		return err
 	}
 
-	// Invalidate the previous token so it can no longer be used.
-	if oldJTI.Valid && oldJTI.String != "" {
+	// Invalidate the previous token now that the new one is current.
+	if oldJTI != "" {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
 			 ON CONFLICT(jti) DO NOTHING`,
-			oldJTI.String, blacklistReason, now); err != nil {
+			oldJTI, blacklistReason, now); err != nil {
 			return err
 		}
 	}
@@ -126,21 +132,6 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		}
 	}
 
-	// Record the new token as an immutable audit entry.
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO issued_tokens (jti, discord_id, display_name, issued_at)
-		 VALUES (?, ?, ?, ?)`,
-		newJTI, discordID, displayName, now); err != nil {
-		return err
-	}
-
-	// Activate the new token.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET current_jti = ?, updated_at = ? WHERE discord_id = ?`,
-		newJTI, now, discordID); err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 
@@ -151,7 +142,7 @@ func (db *DB) ReleaseDisplayName(ctx context.Context, displayName, reason string
 	}
 	defer tx.Rollback()
 
-	var jti sql.NullString
+	var jti string
 	err = tx.QueryRowContext(ctx,
 		`SELECT discord_id, current_jti FROM users WHERE display_name = ?`, displayName).Scan(&priorDiscordID, &jti)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -160,13 +151,11 @@ func (db *DB) ReleaseDisplayName(ctx context.Context, displayName, reason string
 	if err != nil {
 		return "", err
 	}
-	if jti.Valid && jti.String != "" {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
-			 ON CONFLICT(jti) DO NOTHING`,
-			jti.String, reason, db.nowTS()); err != nil {
-			return "", err
-		}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
+		 ON CONFLICT(jti) DO NOTHING`,
+		jti, reason, db.nowTS()); err != nil {
+		return "", err
 	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM users WHERE display_name = ?`, displayName); err != nil {
@@ -182,26 +171,28 @@ func (db *DB) Unregister(ctx context.Context, discordID string) error {
 	}
 	defer tx.Rollback()
 
-	var jti sql.NullString
+	var jti, displayName string
 	err = tx.QueryRowContext(ctx,
-		`SELECT current_jti FROM users WHERE discord_id = ?`, discordID).Scan(&jti)
+		`SELECT current_jti, display_name FROM users WHERE discord_id = ?`, discordID).Scan(&jti, &displayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrUserNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if jti.Valid && jti.String != "" {
-		if _, err = tx.ExecContext(ctx,
-			`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
-			 ON CONFLICT(jti) DO NOTHING`,
-			jti.String, "self unregister", db.nowTS()); err != nil {
-			return err
-		}
+	now := db.nowTS()
+	if _, err = tx.ExecContext(ctx,
+		`INSERT INTO jti_blacklist (jti, reason, created_at) VALUES (?, ?, ?)
+		 ON CONFLICT(jti) DO NOTHING`,
+		jti, "self unregister", now); err != nil {
+		return err
 	}
 	if _, err = tx.ExecContext(ctx,
-		`UPDATE users SET current_jti = NULL, updated_at = ? WHERE discord_id = ?`,
-		db.nowTS(), discordID); err != nil {
+		`DELETE FROM latest_saves WHERE display_name = ?`, displayName); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM users WHERE discord_id = ?`, discordID); err != nil {
 		return err
 	}
 	return tx.Commit()

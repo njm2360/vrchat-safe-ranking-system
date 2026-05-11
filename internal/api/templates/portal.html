@@ -122,8 +122,9 @@
 
     {{if .NameConflict}}
     <div class="alert alert-warning rounded-3 py-2 mb-3" role="alert">
-      <strong></strong> ユーザー名 <code>{{.ProposedName}}</code>
-      は別のDiscordアカウントで登録済みです。Discordアカウントの紐づけを変えたい場合、もしくはこの紐づけに心当たりがない場合は管理者までお問い合わせください。
+      <strong></strong> ユーザー名 <code>{{.ProposedName}}</code>は別のDiscordアカウントで登録済みです。
+      そのDiscordアカウントでログインして登録解除してから、再度お試しください。
+      元のアカウントが不明・ログインできない場合は管理者までお問い合わせください。
     </div>
     {{end}}
 

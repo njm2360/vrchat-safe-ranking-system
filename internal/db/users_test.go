@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
@@ -161,28 +162,36 @@ func TestUpsertUserAndIssue_RenameDropsOldNameFromRanking(t *testing.T) {
 	}
 }
 
-func TestUnregister_BlacklistsCurrentJTI(t *testing.T) {
+func TestUnregister_DeletesUserAndBlacklistsCurrentJTI(t *testing.T) {
 	d := newTestDB(t, nil)
 	ctx := context.Background()
-	if err := d.UpsertUserAndIssue(ctx, "119548486276710402","alice", "j1", ""); err != nil {
+	if err := d.UpsertUserAndIssue(ctx, "119548486276710402", "alice", "j1", ""); err != nil {
 		t.Fatal(err)
 	}
+	// Seed a save so we can confirm latest_saves is dropped too.
+	if err := d.Save(ctx, "alice", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("j1")); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := d.Unregister(ctx, "119548486276710402"); err != nil {
 		t.Fatalf("Unregister: %v", err)
 	}
+
 	if black, _ := d.IsJTIBlacklisted(ctx, "j1"); !black {
 		t.Error("current jti should be blacklisted after Unregister")
 	}
-	// users row preserved so the display_name stays reserved, but current_jti must be cleared.
-	u, err := d.GetUserByDiscordID(ctx, "119548486276710402")
+	if _, err := d.GetUserByDiscordID(ctx, "119548486276710402"); !errors.Is(err, db.ErrUserNotFound) {
+		t.Errorf("user row should be deleted, got err = %v", err)
+	}
+	if registered, _ := d.IsDisplayNameRegistered(ctx, "alice"); registered {
+		t.Error("display_name should be released after Unregister")
+	}
+	rows, err := d.Ranking(ctx, 10, false)
 	if err != nil {
-		t.Fatalf("user row should still exist: %v", err)
+		t.Fatal(err)
 	}
-	if u.DisplayName != "alice" {
-		t.Errorf("DisplayName = %q, want alice", u.DisplayName)
-	}
-	if u.CurrentJTI != "" {
-		t.Errorf("CurrentJTI = %q, want empty after Unregister", u.CurrentJTI)
+	if len(rows) != 0 {
+		t.Errorf("ranking should be empty after Unregister, got %+v", rows)
 	}
 }
 

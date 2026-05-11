@@ -270,7 +270,9 @@ func (s *Server) commitRegister(c echo.Context, discordID, displayName string) e
 			return s.renderError(c, http.StatusForbidden, "このユーザー名は使用できません。")
 		case errors.Is(err, registration.ErrDisplayNameTaken):
 			return s.renderError(c, http.StatusConflict,
-				"このVRChatユーザー名は別のDiscordアカウントで登録されています。最初からやり直してください。")
+				"このVRChatユーザー名は別のDiscordアカウントで登録されています。"+
+					"そのDiscordアカウントでログインして登録解除してから、再度お試しください。"+
+					"元のアカウントが不明・ログインできない場合は管理者までお問い合わせください。")
 		default:
 			s.log.Error("register", "err", err)
 			return s.renderError(c, http.StatusInternalServerError, "登録に失敗しました。")
@@ -291,5 +293,5 @@ func (s *Server) commitUnregister(c echo.Context, discordID string) error {
 		s.log.Error("unregister", "err", err)
 		return s.renderError(c, http.StatusInternalServerError, "登録解除に失敗しました。")
 	}
-	return s.renderMessage(c, "登録解除完了", "ランキングから削除されました。")
+	return s.renderMessage(c, "登録解除完了", "Discord連携を解除しました。")
 }

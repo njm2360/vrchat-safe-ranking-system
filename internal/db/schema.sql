@@ -11,7 +11,7 @@ CREATE INDEX IF NOT EXISTS idx_issued_tokens_discord ON issued_tokens(discord_id
 CREATE TABLE IF NOT EXISTS users (
     discord_id   TEXT PRIMARY KEY,
     display_name TEXT NOT NULL UNIQUE,
-    current_jti  TEXT REFERENCES issued_tokens(jti),
+    current_jti  TEXT NOT NULL REFERENCES issued_tokens(jti),
     created_at   TIMESTAMP NOT NULL,
     updated_at   TIMESTAMP NOT NULL
 );

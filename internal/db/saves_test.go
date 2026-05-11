@@ -13,27 +13,24 @@ import (
 
 func jtiPtr(s string) *string { return &s }
 
-// seedIssuedToken creates a users row (if needed) then inserts an issued_tokens
-// row, mirroring the order required by issued_tokens.discord_id → users FK.
+// seedIssuedToken inserts an issued_tokens row then upserts the users row
+// pointing current_jti at it. issued_tokens has no FK back to users, so it
+// must be inserted first to satisfy users.current_jti's FK constraint.
 func seedIssuedToken(t *testing.T, d *db.DB, jti, discordID, displayName string) {
 	t.Helper()
 	ctx := context.Background()
 	const ts = "2025-01-01T00:00:00Z"
-	if _, err := d.ExecContext(ctx,
-		`INSERT INTO users (discord_id, display_name, current_jti, created_at, updated_at)
-		 VALUES (?,?,NULL,?,?)
-		 ON CONFLICT(discord_id) DO UPDATE SET current_jti = NULL`,
-		discordID, displayName, ts, ts); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
 	if _, err := d.ExecContext(ctx,
 		`INSERT INTO issued_tokens (jti, discord_id, display_name, issued_at) VALUES (?,?,?,?)`,
 		jti, discordID, displayName, ts); err != nil {
 		t.Fatalf("seed token: %v", err)
 	}
 	if _, err := d.ExecContext(ctx,
-		`UPDATE users SET current_jti = ? WHERE discord_id = ?`, jti, discordID); err != nil {
-		t.Fatalf("seed user current_jti: %v", err)
+		`INSERT INTO users (discord_id, display_name, current_jti, created_at, updated_at)
+		 VALUES (?,?,?,?,?)
+		 ON CONFLICT(discord_id) DO UPDATE SET current_jti = excluded.current_jti`,
+		discordID, displayName, jti, ts, ts); err != nil {
+		t.Fatalf("seed user: %v", err)
 	}
 }
 

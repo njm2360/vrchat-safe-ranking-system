@@ -81,8 +81,7 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 		ProposedName:    proposedName,
 	}
 
-	// current_jti が空 = 名前予約済みだが登録解除済み。名前あり行があっても「未登録」扱いにする。
-	activeUser := current != nil && current.CurrentJTI != ""
+	activeUser := current != nil
 	if activeUser {
 		view.CurrentName = current.DisplayName
 	}
@@ -102,13 +101,13 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 	case current.DisplayName == proposedName:
 		view.RegisterAction = portalAction{
 			Action:      "register",
-			ButtonText:  "トークンを再発行",
+			ButtonText:  "トークン再発行",
 			Description: "新しいトークンを発行します。現在のトークンは無効化されます。",
 		}
 	default:
 		view.RegisterAction = portalAction{
 			Action:      "register",
-			ButtonText:  "ユーザー名を変更",
+			ButtonText:  "ユーザー名変更",
 			Description: "ユーザー名を変更します。現在のトークンは無効化されます。",
 		}
 	}
@@ -116,7 +115,7 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 		view.UnregisterAction = portalAction{
 			Action:      "unregister",
 			ButtonText:  "登録解除",
-			Description: "ランキングから削除し、現在のトークンを無効化します。",
+			Description: "Discord連携を解除し、現在のトークンを無効化します。",
 		}
 	}
 
