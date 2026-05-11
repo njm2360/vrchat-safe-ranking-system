@@ -40,7 +40,7 @@ func TestSave_Ranked(t *testing.T) {
 	jwt := &fakeJWT{claims: &auth.Claims{DiscordID: "d", DisplayName: "alice", JTI: "jti-1"}}
 	h := newServer(saves, jwt, fakeIDGen{})
 
-	rr, body := get(t, h, saveURL(1234, time.Unix(1000, 0).UTC(), "alice", "any.jwt.value", ""))
+	rr, body := get(t, h, saveURL(1234, time.Now().Add(-time.Minute).UTC(), "alice", "any.jwt.value", ""))
 	if rr.Code != http.StatusOK || body != "success" {
 		t.Errorf("status=%d body=%q, want 200 'success'", rr.Code, body)
 	}
@@ -57,7 +57,7 @@ func TestSave_Anonymous_Unregistered_OK(t *testing.T) {
 	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: false}
 	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
 
-	rr, body := get(t, h, saveURL(100, time.Unix(1000, 0).UTC(), "ghost", "", ""))
+	rr, body := get(t, h, saveURL(100, time.Now().Add(-time.Minute).UTC(), "ghost", "", ""))
 	if rr.Code != http.StatusOK || body != "success" {
 		t.Errorf("status=%d body=%q, want 200 'success'", rr.Code, body)
 	}
@@ -71,7 +71,7 @@ func TestSave_Anonymous_RegisteredName_Rejected(t *testing.T) {
 	authDB := &fakeAuthStore{jtiOwner: true, dnRegistered: true}
 	h := newServerFull(saves, authDB, &fakeJWT{}, fakeIDGen{}, nil, nil)
 
-	rr, body := get(t, h, saveURL(100, time.Unix(1000, 0).UTC(), "alice", "", ""))
+	rr, body := get(t, h, saveURL(100, time.Now().Add(-time.Minute).UTC(), "alice", "", ""))
 	if rr.Code != http.StatusUnauthorized || body != "jwt required for this display_name" {
 		t.Errorf("status=%d body=%q, want 401 'jwt required for this display_name'", rr.Code, body)
 	}
@@ -100,7 +100,7 @@ func TestSave_WrongOwner_Rejected(t *testing.T) {
 	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "victim", JTI: "jti-attacker"}}
 	h := newServerFull(saves, authDB, jwt, fakeIDGen{}, nil, nil)
 
-	rr, body := get(t, h, saveURL(9999, time.Unix(1000, 0).UTC(), "victim", "any.jwt.value", ""))
+	rr, body := get(t, h, saveURL(9999, time.Now().Add(-time.Minute).UTC(), "victim", "any.jwt.value", ""))
 	if rr.Code != http.StatusUnauthorized || body != "jwt invalid" {
 		t.Errorf("status=%d body=%q, want 401 'jwt invalid'", rr.Code, body)
 	}
@@ -201,22 +201,37 @@ func TestSave_DuplicateSave_Returns409(t *testing.T) {
 	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
 	h := newServer(saves, jwt, fakeIDGen{})
 
-	rr, body := get(t, h, saveURL(100, time.Unix(1000, 0).UTC(), "alice", "any.jwt.value", ""))
+	rr, body := get(t, h, saveURL(100, time.Now().Add(-time.Minute).UTC(), "alice", "any.jwt.value", ""))
 	if rr.Code != http.StatusConflict || body != "duplicate save" {
 		t.Errorf("status=%d body=%q, want 409 'duplicate save'", rr.Code, body)
 	}
 }
 
-func TestSave_MissingGeneratedAt_Returns400(t *testing.T) {
-	saves := &fakeSaveStore{}
-	jwt := &fakeJWT{claims: &auth.Claims{DisplayName: "alice", JTI: "j"}}
-	h := newServer(saves, jwt, fakeIDGen{})
-
-	rr, body := get(t, h, saveURL(100, time.Time{}, "alice", "any.jwt.value", ""))
-	if rr.Code != http.StatusBadRequest || body != "missing generated_at" {
-		t.Errorf("status=%d body=%q, want 400 'missing generated_at'", rr.Code, body)
+// generated_at validation is intentionally opaque: out-of-range and
+// missing both return a generic 400 with no field-specific message,
+// so the existence of the check isn't advertised in error responses.
+func TestSave_GeneratedAtOutOfRange_Returns400(t *testing.T) {
+	cases := []struct {
+		name string
+		ts   time.Time
+	}{
+		{"missing", time.Time{}},
+		{"too far in future", time.Now().Add(time.Hour).UTC()},
+		{"too far in past", time.Now().Add(-8 * 24 * time.Hour).UTC()},
 	}
-	if len(saves.saveCalls) != 0 {
-		t.Error("Save should not be called when generated_at is missing")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			saves := &fakeSaveStore{}
+			jwt := &fakeJWT{claims: &auth.Claims{DiscordID: "d", DisplayName: "alice", JTI: "j"}}
+			h := newServer(saves, jwt, fakeIDGen{})
+
+			rr, body := get(t, h, saveURL(1, tc.ts, "alice", "any.jwt.value", ""))
+			if rr.Code != http.StatusBadRequest || body != "bad request" {
+				t.Errorf("status=%d body=%q, want 400 'bad request'", rr.Code, body)
+			}
+			if len(saves.saveCalls) != 0 {
+				t.Error("Save should not be called for out-of-range generated_at")
+			}
+		})
 	}
 }

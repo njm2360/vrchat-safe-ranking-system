@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/njm2360/vrchat-ranking-system/internal/auth"
@@ -52,9 +53,11 @@ func (s *Server) handleSave(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "invalid data json")
 	}
-	if data.GeneratedAt.IsZero() {
-		return c.String(http.StatusBadRequest, "missing generated_at")
+
+	if err := validateSaveData(data, time.Now()); err != nil {
+		return c.String(http.StatusBadRequest, "bad request")
 	}
+
 	if err := s.saves.Save(c.Request().Context(), displayName, data, jtiPtr); err != nil {
 		if errors.Is(err, db.ErrDuplicateSave) {
 			return c.String(http.StatusConflict, "duplicate save")
