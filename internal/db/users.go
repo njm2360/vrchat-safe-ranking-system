@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var (
@@ -99,7 +101,8 @@ func (db *DB) UpsertUserAndIssue(ctx context.Context, discordID, displayName, ne
 		   current_jti  = NULL,
 		   updated_at   = excluded.updated_at`,
 		discordID, displayName, now, now); err != nil {
-		if strings.Contains(err.Error(), "users.display_name") {
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
 			return ErrDisplayNameTaken
 		}
 		return err
