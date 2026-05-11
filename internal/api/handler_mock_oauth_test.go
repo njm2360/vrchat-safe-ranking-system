@@ -151,7 +151,7 @@ func TestMockOAuth_FullFlow_Register(t *testing.T) {
 	}
 	loc2 := rr2.Header().Get("Location")
 
-	rr3, body3 := followCallback(t, h, loc2)
+	rr3, body3, cookie := followCallback(t, h, loc2)
 	if rr3.Code != http.StatusOK {
 		t.Fatalf("portal-view status = %d body=%q", rr3.Code, body3)
 	}
@@ -165,11 +165,10 @@ func TestMockOAuth_FullFlow_Register(t *testing.T) {
 		t.Error("user row should not exist before /auth/portal POST")
 	}
 
-	tok := extractActionToken(body3, "register")
-	if tok == "" {
+	if !hasActionForm(body3, "register") {
 		t.Fatalf("no register form in portal body: %s", body3)
 	}
-	rr4, body4 := portalPost(t, h, tok, "register")
+	rr4, body4 := portalPost(t, h, cookie, "register")
 	if rr4.Code != http.StatusOK {
 		t.Fatalf("portal status = %d body=%q", rr4.Code, body4)
 	}

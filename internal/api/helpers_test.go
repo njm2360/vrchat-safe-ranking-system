@@ -41,7 +41,15 @@ func newMockServer(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifie
 
 func get(t *testing.T, h http.Handler, target string) (*httptest.ResponseRecorder, string) {
 	t.Helper()
+	return getWithCookie(t, h, target, "")
+}
+
+func getWithCookie(t *testing.T, h http.Handler, target, sessionCookie string) (*httptest.ResponseRecorder, string) {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if sessionCookie != "" {
+		req.AddCookie(&http.Cookie{Name: "vsrs_portal_session", Value: sessionCookie})
+	}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	body, _ := io.ReadAll(rr.Body)
@@ -51,23 +59,49 @@ func get(t *testing.T, h http.Handler, target string) (*httptest.ResponseRecorde
 // postForm submits an application/x-www-form-urlencoded POST.
 func postForm(t *testing.T, h http.Handler, target string, form url.Values) (*httptest.ResponseRecorder, string) {
 	t.Helper()
+	return postFormWithCookie(t, h, target, form, "")
+}
+
+func postFormWithCookie(t *testing.T, h http.Handler, target string, form url.Values, sessionCookie string) (*httptest.ResponseRecorder, string) {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if sessionCookie != "" {
+		req.AddCookie(&http.Cookie{Name: "vsrs_portal_session", Value: sessionCookie})
+	}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	body, _ := io.ReadAll(rr.Body)
 	return rr, string(body)
 }
 
+// portalSessionCookie returns the value of the vsrs_portal_session cookie
+// from a response, or "" if the cookie wasn't set or was cleared.
+func portalSessionCookie(rr *httptest.ResponseRecorder) string {
+	for _, ck := range rr.Result().Cookies() {
+		if ck.Name != "vsrs_portal_session" {
+			continue
+		}
+		if ck.MaxAge < 0 || ck.Value == "" {
+			return ""
+		}
+		return ck.Value
+	}
+	return ""
+}
+
 // followCallback drives /auth/callback. On a 303 (the happy path now),
-// it follows the Location header to the portal-view page and returns
-// that response. On any other status it returns the original response,
-// so error paths (400/403/etc.) are still observable.
-func followCallback(t *testing.T, h http.Handler, target string) (*httptest.ResponseRecorder, string) {
+// it follows the Location header to the portal-view page using the
+// session cookie set by the callback, and returns the portal response
+// along with the cookie value. On any other status it returns the
+// original response, so error paths (400/403/etc.) are still observable.
+func followCallback(t *testing.T, h http.Handler, target string) (*httptest.ResponseRecorder, string, string) {
 	t.Helper()
 	rr, body := get(t, h, target)
 	if rr.Code == http.StatusSeeOther {
-		return get(t, h, rr.Header().Get("Location"))
+		cookie := portalSessionCookie(rr)
+		rr2, body2 := getWithCookie(t, h, rr.Header().Get("Location"), cookie)
+		return rr2, body2, cookie
 	}
-	return rr, body
+	return rr, body, ""
 }

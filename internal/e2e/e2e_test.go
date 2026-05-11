@@ -6,10 +6,10 @@ package e2e
 import (
 	"context"
 	"errors"
-	"html"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
@@ -47,11 +47,6 @@ type harness struct {
 	client   *vrcclient.Client
 }
 
-// no-redirect HTTP client so Auth() can assert on the Location header.
-var noRedirect = &http.Client{
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-}
-
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	fc := clock.NewFake(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
@@ -87,52 +82,52 @@ func newHarness(t *testing.T) *harness {
 	}
 }
 
+// newBrowserClient returns an http.Client that follows redirects and
+// retains cookies between requests — i.e. acts like a real browser
+// driving the portal flow.
+func (h *harness) newBrowserClient() *http.Client {
+	h.t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		h.t.Fatalf("cookiejar: %v", err)
+	}
+	return &http.Client{Jar: jar}
+}
+
 // portalGet drives /auth/start → 302 to provider → fake provider redirects
-// back to /auth/callback with the supplied discord_id as code → server
-// renders the portal page. Returns the portal HTML.
-func (h *harness) portalGet(displayName, discordID string) string {
+// back to /auth/callback → 303 to /auth/portal. Returns the cookie-bearing
+// client (so the caller can POST register/unregister) and the portal HTML.
+func (h *harness) portalGet(displayName, discordID string) (*http.Client, string) {
 	h.t.Helper()
 	code := "code-" + discordID + "-" + displayName
 	h.provider.CodeToUser[code] = &oauth.User{ID: discordID}
 	h.provider.NextCode = code
 
+	client := h.newBrowserClient()
 	startURL := h.server.URL + "/auth/start?name=" + url.QueryEscape(displayName)
-	resp, err := noRedirect.Get(startURL)
+	resp, err := client.Get(startURL)
 	if err != nil {
 		h.t.Fatalf("auth start: %v", err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusFound {
-		h.t.Fatalf("auth start status = %d, want 302", resp.StatusCode)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		h.t.Fatalf("portal view status = %d: %s", resp.StatusCode, string(body))
 	}
-	cb := resp.Header.Get("Location")
-	if cb == "" {
-		h.t.Fatal("auth start: empty Location header")
-	}
-	cbResp, err := http.Get(cb)
-	if err != nil {
-		h.t.Fatalf("auth callback: %v", err)
-	}
-	defer cbResp.Body.Close()
-	body, _ := io.ReadAll(cbResp.Body)
-	if cbResp.StatusCode != http.StatusOK {
-		h.t.Fatalf("auth callback status = %d: %s", cbResp.StatusCode, string(body))
-	}
-	return string(body)
+	return client, string(body)
 }
 
-// portalAct fetches the portal page, locates the form for the given action
-// (register / unregister), and submits it via POST. Returns the result body.
+// portalAct fetches the portal page, confirms the form for the given
+// action (register / unregister) is rendered, and submits it via POST
+// using the browser-like client that carries the portal session cookie.
+// Returns the result body.
 func (h *harness) portalAct(displayName, discordID, action string) string {
 	h.t.Helper()
-	portal := h.portalGet(displayName, discordID)
-	tok := extractActionToken(portal, action)
-	if tok == "" {
+	client, portal := h.portalGet(displayName, discordID)
+	if !hasActionForm(portal, action) {
 		h.t.Fatalf("no %s action form in portal body: %s", action, portal)
 	}
-	resp, err := http.PostForm(h.server.URL+"/auth/"+action, url.Values{
-		"token": {tok},
-	})
+	resp, err := client.PostForm(h.server.URL+"/auth/"+action, url.Values{})
 	if err != nil {
 		h.t.Fatalf("portal %s: %v", action, err)
 	}
@@ -156,18 +151,12 @@ func (h *harness) register(discordID, displayName string) string {
 	return jwt
 }
 
-// extractActionToken finds the <form> on the portal page whose action
-// attribute matches /auth/<action> and returns the token from that form's
-// hidden "token" input.
-func extractActionToken(body, action string) string {
-	formRe := regexp.MustCompile(`(?s)<form[^>]*action="/auth/` + regexp.QuoteMeta(action) + `"[^>]*>(.*?)</form>`)
-	tokenRe := regexp.MustCompile(`name="token"\s+value="([^"]*)"`)
-	for _, m := range formRe.FindAllStringSubmatch(body, -1) {
-		if tm := tokenRe.FindStringSubmatch(m[1]); len(tm) >= 2 {
-			return html.UnescapeString(tm[1])
-		}
-	}
-	return ""
+// hasActionForm reports whether the portal page renders a <form> whose
+// action attribute matches /auth/<action>. With the session token in a
+// cookie, the form no longer carries it, so this is a presence check.
+func hasActionForm(body, action string) bool {
+	re := regexp.MustCompile(`<form[^>]*action="/auth/` + regexp.QuoteMeta(action) + `"`)
+	return re.MatchString(body)
 }
 
 // extractJWT pulls the JWT out of the id="jwt-token" block in the success
@@ -301,22 +290,26 @@ func TestE2E_OAuthStateSingleUse(t *testing.T) {
 	}
 	h.provider.CodeToUser["c"] = &oauth.User{ID: "discord-x"}
 
-	// First callback succeeds.
-	resp, err := http.Get(h.server.URL + "/auth/callback?code=c&state=manual-state")
+	noRedirect := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+
+	// First callback succeeds — happy path is a 303 redirect to the portal.
+	resp, err := noRedirect.Get(h.server.URL + "/auth/callback?code=c&state=manual-state")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("first callback status = %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("first callback status = %d, want 303", resp.StatusCode)
 	}
 	// Second callback with the same state must fail (single-use).
-	resp2, err := http.Get(h.server.URL + "/auth/callback?code=c&state=manual-state")
+	resp2, err := noRedirect.Get(h.server.URL + "/auth/callback?code=c&state=manual-state")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp2.Body.Close()
-	if resp2.StatusCode == http.StatusOK {
-		t.Errorf("expected non-200 on state reuse, got 200")
+	if resp2.StatusCode == http.StatusSeeOther {
+		t.Errorf("expected non-303 on state reuse, got %d", resp2.StatusCode)
 	}
 }

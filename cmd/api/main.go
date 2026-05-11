@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,6 +56,7 @@ func main() {
 		OAuthStateTTL:  cfg.OAuthStateTTL,
 		SessionTTL:     cfg.SessionTTL,
 		MockOAuth:      cfg.OAuthMode == config.OAuthModeMock,
+		CookieSecure:   strings.HasPrefix(cfg.BaseURL, "https://"),
 	}
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,

@@ -15,6 +15,32 @@ import (
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
 )
 
+const portalSessionCookieName = "vsrs_portal_session"
+
+func (s *Server) setPortalSessionCookie(c echo.Context, token string) {
+	c.SetCookie(&http.Cookie{
+		Name:     portalSessionCookieName,
+		Value:    token,
+		Path:     "/auth",
+		HttpOnly: true,
+		Secure:   s.cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(s.cfg.SessionTTL.Seconds()),
+	})
+}
+
+func (s *Server) clearPortalSessionCookie(c echo.Context) {
+	c.SetCookie(&http.Cookie{
+		Name:     portalSessionCookieName,
+		Value:    "",
+		Path:     "/auth",
+		HttpOnly: true,
+		Secure:   s.cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 func validDisplayName(name string) bool {
 	if name == "" {
 		return false
@@ -148,13 +174,13 @@ func (s *Server) handleAuthCallback(c echo.Context) error {
 		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
 	}
 
-	portalURL := "/auth/portal?" + url.Values{"token": {sessionToken}}.Encode()
-	return c.Redirect(http.StatusSeeOther, portalURL)
+	s.setPortalSessionCookie(c, sessionToken)
+	return c.Redirect(http.StatusSeeOther, "/auth/portal")
 }
 
 func (s *Server) handleAuthPortalView(c echo.Context) error {
 	ctx := c.Request().Context()
-	token := strings.TrimSpace(c.QueryParam("token"))
+	token := readPortalSessionCookie(c)
 	if token == "" {
 		return s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
 	}
@@ -162,9 +188,11 @@ func (s *Server) handleAuthPortalView(c echo.Context) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrAuthSessionNotFound):
+			s.clearPortalSessionCookie(c)
 			return s.renderError(c, http.StatusBadRequest,
 				"セッションが無効です。最初からやり直してください。")
 		case errors.Is(err, db.ErrAuthSessionExpired):
+			s.clearPortalSessionCookie(c)
 			return s.renderError(c, http.StatusBadRequest,
 				"セッションが期限切れです。最初からやり直してください。")
 		default:
@@ -173,16 +201,27 @@ func (s *Server) handleAuthPortalView(c echo.Context) error {
 		}
 	}
 	authed := &oauth.User{ID: session.DiscordID, Username: session.DiscordUsername}
-	return s.renderPortal(c, token, authed, session.ProposedName)
+	return s.renderPortal(c, authed, session.ProposedName)
+}
+
+func readPortalSessionCookie(c echo.Context) string {
+	ck, err := c.Cookie(portalSessionCookieName)
+	if err != nil || ck == nil {
+		return ""
+	}
+	return strings.TrimSpace(ck.Value)
 }
 
 func (s *Server) consumePortalSession(c echo.Context) (*db.AuthSession, error) {
-	token := strings.TrimSpace(c.Request().PostFormValue("token"))
+	token := readPortalSessionCookie(c)
 	if token == "" {
 		_ = s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
 		return nil, db.ErrAuthSessionNotFound
 	}
 	session, err := s.authDB.ConsumeAuthSession(c.Request().Context(), token)
+	// The cookie is single-use: clear it regardless of consume outcome so
+	// the browser can't keep replaying a stale token.
+	s.clearPortalSessionCookie(c)
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrAuthSessionNotFound):

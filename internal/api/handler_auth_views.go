@@ -23,14 +23,13 @@ var (
 )
 
 type portalAction struct {
-	Action      string // "register" or "unregister" — submitted as a hidden form field
+	Action      string // "register" or "unregister" — used to build the form action URL
 	ButtonText  string
 	Description string
 	Primary     bool
 }
 
 type portalView struct {
-	Token            string // session token, embedded in each action form
 	DiscordUsername  string // empty if the IdP didn't return a username
 	ProposedName     string
 	CurrentName      string // empty if not registered
@@ -52,7 +51,7 @@ func (v portalView) ShowProposedName() bool {
 // renderPortal builds the per-user portal view: shows the authenticated
 // Discord identity, the current registration state (display name + active
 // JWT if any), and offers context-appropriate action buttons.
-func (s *Server) renderPortal(c echo.Context, sessionToken string, authed *oauth.User, proposedName string) error {
+func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName string) error {
 	ctx := c.Request().Context()
 
 	current, err := s.authDB.GetUserByDiscordID(ctx, authed.ID)
@@ -78,7 +77,6 @@ func (s *Server) renderPortal(c echo.Context, sessionToken string, authed *oauth
 	}
 
 	view := portalView{
-		Token:           sessionToken,
 		DiscordUsername: authed.Username,
 		ProposedName:    proposedName,
 	}

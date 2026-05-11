@@ -151,7 +151,6 @@
       {{with .RegisterAction}}{{if .Action}}
       <div class="action-row">
         <form method="POST" action="/auth/{{.Action}}" class="mb-0">
-          <input type="hidden" name="token" value="{{$.Token}}">
           <button type="submit"
             class="btn btn-sm action-btn {{if .Primary}}btn-primary{{else}}btn-secondary{{end}}">{{.ButtonText}}</button>
         </form>
@@ -171,7 +170,6 @@
       {{with .UnregisterAction}}{{if .Action}}
       <div class="action-row">
         <form method="POST" action="/auth/{{.Action}}" class="mb-0">
-          <input type="hidden" name="token" value="{{$.Token}}">
           <button type="submit" class="btn btn-sm action-btn btn-danger">{{.ButtonText}}</button>
         </form>
         <span class="text-muted" style="font-size:0.85rem">{{.Description}}</span>

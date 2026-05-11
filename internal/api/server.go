@@ -64,6 +64,7 @@ type Config struct {
 	OAuthStateTTL  time.Duration
 	SessionTTL     time.Duration
 	MockOAuth      bool
+	CookieSecure   bool
 }
 
 type Server struct {
