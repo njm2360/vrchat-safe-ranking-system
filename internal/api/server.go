@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"log/slog"
 
@@ -127,8 +128,13 @@ func (s *Server) Handler() http.Handler {
 				slog.String("method", v.Method),
 				slog.String("path", path),
 				slog.Int("status", v.Status),
-				slog.String("user_agent", v.UserAgent),
+				slog.String("user_agent", clampForLog(v.UserAgent, 256)),
 				slog.String("remote_ip", v.RemoteIP),
+			}
+			if path == "/save" || path == "/load" {
+				if dn := c.QueryParam("display_name"); dn != "" {
+					attrs = append(attrs, slog.String("display_name", clampForLog(dn, 64)))
+				}
 			}
 			if v.Error != nil {
 				attrs = append(attrs, slog.String("error", v.Error.Error()))
@@ -157,4 +163,19 @@ func (s *Server) Handler() http.Handler {
 	e.GET("/swagger", handleSwaggerUI)
 
 	return e
+}
+
+// clampForLog truncates s to at most maxBytes, cutting on a UTF-8 boundary and
+// appending "…" when truncated. Used to bound log field sizes for untrusted
+// client-supplied values (User-Agent, display_name) so a single request can't
+// inflate log volume.
+func clampForLog(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
