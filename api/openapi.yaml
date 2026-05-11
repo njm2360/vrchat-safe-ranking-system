@@ -8,25 +8,26 @@ info:
 
     ## 認証モデル
 
-    - `/save` `/load`はHMAC署名で保護される。`jwt`クエリはオプション。
-    - `display_name`がDBに未登録ならJWTなしで通る (HMAC のみ検証)。
+    - `/save` `/load`はSipHash署名で保護される。`jwt`クエリはオプション。
+    - `display_name`がDBに未登録ならJWTなしで通る (署名のみ検証)。
     - `display_name`が登録済みならJWT必須。`display_name`がJWT
       クレームと一致し、JTIが当該ユーザーの現行JTIかつブラックリスト未登録
       でなければ`401`。
-    - HMAC秘密鍵はUdon側に埋め込まれており抽出可能。クエリ書き換えや
+    - 署名鍵はUdon側に埋め込まれており抽出可能。クエリ書き換えや
       ロード応答MITM改ざんを検知するライト層対策であり、鍵抽出を伴う
       高度な攻撃はスコープ外。登録済みDisplayNameはJWTで本人検証
       されるため、鍵漏洩時も正規ユーザーは自分のスコアを守れる。
 
-    ## HMAC 仕様
+    ## 署名仕様
 
-    複数パートは 1 バイトの `0x00` で区切って連結する。
+    SipHash-2-4 (16バイト鍵、64bitタグ) を使用する。タグは lowercase hex で
+    16文字。複数パートは 1 バイトの `0x00` で区切って連結する。
 
     | 場面 | メッセージ | 鍵 |
     | ---- | ---------- | --- |
-    | `/save` リクエスト sig | `<data raw bytes> ‖ 0x00 ‖ <display_name bytes>` | `HMAC_SAVE_SECRET` |
-    | `/load` リクエスト sig | `<display_name bytes>` | `HMAC_LOAD_SECRET` |
-    | `/load` レスポンス sig | レスポンス内 `data` の raw bytes | `HMAC_LOAD_SECRET` |
+    | `/save` リクエスト sig | `<data raw bytes> ‖ 0x00 ‖ <display_name bytes>` | `SAVE_SECRET` |
+    | `/load` リクエスト sig | `<display_name bytes>` | `LOAD_SECRET` |
+    | `/load` レスポンス sig | レスポンス内 `data` の raw bytes | `LOAD_SECRET` |
 
 paths:
   /save:
@@ -34,7 +35,7 @@ paths:
       operationId: SaveData
       summary: セーブデータを保存する
       description: |
-        HMAC-SHA256 署名付きのセーブデータをサーバーに記録します。
+        SipHash-2-4 署名付きのセーブデータをサーバーに記録します。
         `jwt` は登録済み `display_name` に対してのみ必須。
       parameters:
         - name: display_name
@@ -55,7 +56,7 @@ paths:
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(data ‖ 0x00 ‖ display_name) の lowercase hex
+          description: SipHash-2-4(SAVE_SECRET, data ‖ 0x00 ‖ display_name) の lowercase hex (16文字)
         - name: jwt
           in: query
           required: false
@@ -89,7 +90,7 @@ paths:
       summary: 最新のセーブデータを取得する
       description: |
         指定 `display_name` の最新セーブデータと、レスポンスボディの完全性を
-        証明する HMAC 署名を返します。
+        証明する SipHash 署名を返します。
         `jwt` は登録済み `display_name` に対してのみ必須。
       parameters:
         - name: display_name
@@ -103,7 +104,7 @@ paths:
           required: true
           schema:
             type: string
-          description: HMAC-SHA256(display_name) の lowercase hex
+          description: SipHash-2-4(LOAD_SECRET, display_name) の lowercase hex (16文字)
         - name: jwt
           in: query
           required: false
@@ -149,7 +150,7 @@ paths:
             default: false
           description: |
             `true` のとき JWT 認証付きで保存されたエントリのみを返す。
-            省略時は HMAC のみのエントリも含む。
+            省略時は署名のみのエントリも含む。
       responses:
         "200":
           description: ランキング一覧 (該当なしのときは空配列)
@@ -184,7 +185,7 @@ paths:
           schema:
             type: string
           description: |
-            `HMAC-SHA256(HMAC_AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex
+            `SipHash-2-4(AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex (16文字)
         - name: fake_discord_id
           in: query
           required: false
@@ -366,7 +367,7 @@ components:
         sig:
           type: string
           description: |
-            `HMAC-SHA256(HMAC_LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex。
+            `SipHash-2-4(LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex (16文字)。
             Udon 側で検証することでロード応答の MITM 改ざんを検知できる。
 
     RankingRow:
@@ -391,4 +392,4 @@ components:
           type: boolean
           description: |
             セーブが JWT 認証下で行われたか (= `save_history.jti IS NOT NULL`)。
-            HMAC だけで保存されたエントリは `false`。
+            署名のみで保存されたエントリは `false`。

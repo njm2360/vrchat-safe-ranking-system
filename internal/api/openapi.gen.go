@@ -11,7 +11,7 @@ import (
 type LoadResponse struct {
 	Data SaveData `json:"data"`
 
-	// Sig `HMAC-SHA256(HMAC_LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex。
+	// Sig `SipHash-2-4(LOAD_SECRET, <data の raw JSON bytes>)` の lowercase hex (16文字)。
 	// Udon 側で検証することでロード応答の MITM 改ざんを検知できる。
 	Sig string `json:"sig"`
 }
@@ -31,7 +31,7 @@ type RankingRow struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// Verified セーブが JWT 認証下で行われたか (= `save_history.jti IS NOT NULL`)。
-	// HMAC だけで保存されたエントリは `false`。
+	// 署名のみで保存されたエントリは `false`。
 	Verified bool `json:"verified"`
 }
 
@@ -72,7 +72,7 @@ type AuthStartParams struct {
 	// DisplayName 登録したい VRChat 表示名
 	DisplayName string `form:"display_name" json:"display_name"`
 
-	// Sig `HMAC-SHA256(HMAC_AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex
+	// Sig `SipHash-2-4(AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex (16文字)
 	Sig string `form:"sig" json:"sig"`
 
 	// FakeDiscordId (Mock OAuth モード専用) 18 桁の数字。省略時はランダムな snowflake を生成。
@@ -93,7 +93,7 @@ type LoadDataParams struct {
 	// DisplayName VRChat 表示名 (JWT を付ける場合は `display_name` クレームと一致必須)
 	DisplayName string `form:"display_name" json:"display_name"`
 
-	// Sig HMAC-SHA256(display_name) の lowercase hex
+	// Sig SipHash-2-4(LOAD_SECRET, display_name) の lowercase hex (16文字)
 	Sig string `form:"sig" json:"sig"`
 
 	// Jwt 認証 JWT。`display_name` が登録済みの場合は必須
@@ -106,7 +106,7 @@ type GetRankingParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Verified `true` のとき JWT 認証付きで保存されたエントリのみを返す。
-	// 省略時は HMAC のみのエントリも含む。
+	// 省略時は署名のみのエントリも含む。
 	Verified *bool `form:"verified,omitempty" json:"verified,omitempty"`
 }
 
@@ -118,7 +118,7 @@ type SaveDataParams struct {
 	// Data `SaveData` を JSON 化したもの (URL エンコード必要)。
 	Data string `form:"data" json:"data"`
 
-	// Sig HMAC-SHA256(data ‖ 0x00 ‖ display_name) の lowercase hex
+	// Sig SipHash-2-4(SAVE_SECRET, data ‖ 0x00 ‖ display_name) の lowercase hex (16文字)
 	Sig string `form:"sig" json:"sig"`
 
 	// Jwt 認証 JWT。`display_name` が登録済みの場合は必須
