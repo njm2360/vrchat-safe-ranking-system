@@ -96,6 +96,33 @@ func TestJWTRejectsAlgNone(t *testing.T) {
 	}
 }
 
+// Verify pins HS256 explicitly; tokens signed with other HMAC variants
+// must be rejected even when the same secret is used.
+func TestJWTRejectsOtherHMACAlgs(t *testing.T) {
+	cases := []struct {
+		name   string
+		method jwt.SigningMethod
+	}{
+		{"HS384", jwt.SigningMethodHS384},
+		{"HS512", jwt.SigningMethodHS512},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tok := jwt.NewWithClaims(tc.method, auth.Claims{
+				DiscordID: "d", DisplayName: "alice", JTI: "x", IssuedAt: 1,
+			})
+			signed, err := tok.SignedString([]byte(testSecret))
+			if err != nil {
+				t.Fatalf("sign %s: %v", tc.name, err)
+			}
+			issuer := auth.NewJWTIssuer([]byte(testSecret))
+			if _, err := issuer.Verify(signed); err == nil {
+				t.Errorf("Verify accepted %s token", tc.name)
+			}
+		})
+	}
+}
+
 func TestJWTRejectsMissingClaims(t *testing.T) {
 	cases := []struct {
 		name   string
