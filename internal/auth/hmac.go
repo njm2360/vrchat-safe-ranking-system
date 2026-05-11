@@ -22,6 +22,9 @@ func SignHex(key []byte, parts ...[]byte) string {
 }
 
 func VerifyHex(key []byte, gotHex string, parts ...[]byte) bool {
+	if len(gotHex) != sha256.Size*2 {
+		return false
+	}
 	want, err := hex.DecodeString(gotHex)
 	if err != nil {
 		return false

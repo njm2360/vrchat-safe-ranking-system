@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode"
 
 	"github.com/labstack/echo/v4"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
@@ -39,21 +38,6 @@ func (s *Server) clearPortalSessionCookie(c echo.Context) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
-}
-
-func validDisplayName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
-		if unicode.IsControl(r) {
-			return false
-		}
-	}
-	return true
 }
 
 func newRandomToken() (string, error) {

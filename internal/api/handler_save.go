@@ -23,6 +23,9 @@ func (s *Server) handleSave(c echo.Context) error {
 	if displayName == "" {
 		return c.String(http.StatusBadRequest, "missing display_name")
 	}
+	if !validDisplayName(displayName) {
+		return c.String(http.StatusBadRequest, "bad request")
+	}
 	if sigHex == "" {
 		return c.String(http.StatusBadRequest, "missing sig")
 	}
