@@ -62,6 +62,9 @@ func main() {
 		Addr:              cfg.APIAddr,
 		Handler:           api.New(apiCfg, database, database, issuer, idgen.Real{}, provider, regSvc, log).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

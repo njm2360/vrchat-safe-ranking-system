@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Discord endpoints. Overridable via DiscordConfig for tests.
@@ -57,7 +58,7 @@ func NewDiscord(cfg DiscordConfig) *DiscordProvider {
 		p.userURL = defaultDiscordUserURL
 	}
 	if p.http == nil {
-		p.http = http.DefaultClient
+		p.http = &http.Client{Timeout: 10 * time.Second}
 	}
 	return p
 }
