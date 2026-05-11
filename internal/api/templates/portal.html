@@ -116,15 +116,13 @@
 
     {{if .NameBanned}}
     <div class="alert alert-danger rounded-3 py-2 mb-3" role="alert">
-      <strong>使用不可：</strong> ユーザー名 <code>{{.ProposedName}}</code> は使用できません。
+      {{template "frag_name_banned_notice" .ProposedName}}
     </div>
     {{end}}
 
     {{if .NameConflict}}
     <div class="alert alert-warning rounded-3 py-2 mb-3" role="alert">
-      <strong></strong> ユーザー名 <code>{{.ProposedName}}</code>は別のDiscordアカウントで登録済みです。
-      そのDiscordアカウントでログインして登録解除してから、再度お試しください。
-      元のアカウントが不明・ログインできない場合は管理者までお問い合わせください。
+      {{template "frag_name_taken_notice" .ProposedName}}
     </div>
     {{end}}
 

@@ -73,7 +73,7 @@
   <div class="container" style="max-width:640px">
 
     <div class="alert rounded-3 py-2 mb-3 alert-success" role="alert">
-      {{.Heading}}
+      {{exec_tok_heading .Action .}}
     </div>
 
     <div class="section-card">
@@ -120,3 +120,8 @@
 </body>
 
 </html>
+
+
+{{define "tok_heading_register"}}登録完了{{end}}
+{{define "tok_heading_renewal"}}トークンを再発行しました（旧トークンは無効化されました）{{end}}
+{{define "tok_heading_rename"}}ユーザー名を変更しました（旧トークンは無効化されました）{{end}}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 
@@ -16,11 +17,37 @@ import (
 var templateFS embed.FS
 
 var (
-	tplToken     = template.Must(template.ParseFS(templateFS, "templates/token.html"))
-	tplMessage   = template.Must(template.ParseFS(templateFS, "templates/message.html"))
-	tplPortal    = template.Must(template.ParseFS(templateFS, "templates/portal.html"))
-	tplMockLogin = template.Must(template.ParseFS(templateFS, "templates/mock_login.html"))
+	tplToken     *template.Template
+	tplMessage   *template.Template
+	tplPortal    *template.Template
+	tplMockLogin *template.Template
 )
+
+func init() {
+	funcs := template.FuncMap{
+		"exec_msg": func(code msgCode, data any) (template.HTML, error) {
+			return execNamed(tplMessage, fmt.Sprintf("msg_%s", code), data)
+		},
+		"exec_tok_heading": func(action tokenAction, data any) (template.HTML, error) {
+			return execNamed(tplToken, fmt.Sprintf("tok_heading_%s", action), data)
+		},
+	}
+	tplToken = template.Must(template.New("token.html").Funcs(funcs).ParseFS(templateFS, "templates/token.html", "templates/shared.html"))
+	tplMessage = template.Must(template.New("message.html").Funcs(funcs).ParseFS(templateFS, "templates/message.html", "templates/shared.html"))
+	tplPortal = template.Must(template.New("portal.html").Funcs(funcs).ParseFS(templateFS, "templates/portal.html", "templates/shared.html"))
+	tplMockLogin = template.Must(template.New("mock_login.html").ParseFS(templateFS, "templates/mock_login.html"))
+}
+
+func execNamed(t *template.Template, name string, data any) (template.HTML, error) {
+	if t.Lookup(name) == nil {
+		return "", fmt.Errorf("template %q not defined", name)
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return template.HTML(buf.String()), nil
+}
 
 type portalAction struct {
 	Action      string // "register" or "unregister" — used to build the form action URL
@@ -57,13 +84,13 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 	current, err := s.authDB.GetUserByDiscordID(ctx, authed.ID)
 	if err != nil && !errors.Is(err, db.ErrUserNotFound) {
 		s.log.Error("portal: lookup user", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 
 	nameIsBanned := false
 	if banned, err := s.authDB.IsDisplayNameBanned(ctx, proposedName); err != nil {
 		s.log.Error("portal: display name ban check", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	} else if banned {
 		nameIsBanned = true
 	}
@@ -73,7 +100,7 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 		nameTakenByOther = true
 	} else if err != nil && !errors.Is(err, db.ErrUserNotFound) {
 		s.log.Error("portal: lookup name", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 
 	view := portalView{
@@ -126,28 +153,32 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 	return c.HTMLBlob(http.StatusOK, buf.Bytes())
 }
 
-func (s *Server) renderToken(c echo.Context, heading, displayName, jwt string) error {
+func (s *Server) renderMessageCode(c echo.Context, code msgCode, displayName ...string) error {
+	data := struct {
+		Code        msgCode
+		DisplayName string
+	}{Code: code}
+	if len(displayName) > 0 {
+		data.DisplayName = displayName[0]
+	}
 	var buf bytes.Buffer
-	if err := tplToken.Execute(&buf, struct{ Heading, DisplayName, JWT string }{heading, displayName, jwt}); err != nil {
+	if err := tplMessage.Execute(&buf, data); err != nil {
+		return err
+	}
+	return c.HTMLBlob(code.status(), buf.Bytes())
+}
+
+func (s *Server) renderToken(c echo.Context, action tokenAction, displayName, jwt string) error {
+	var buf bytes.Buffer
+	data := struct {
+		Action      tokenAction
+		DisplayName string
+		JWT         string
+	}{action, displayName, jwt}
+	if err := tplToken.Execute(&buf, data); err != nil {
 		return err
 	}
 	return c.HTMLBlob(http.StatusOK, buf.Bytes())
-}
-
-func (s *Server) renderMessage(c echo.Context, heading, body string) error {
-	var buf bytes.Buffer
-	if err := tplMessage.Execute(&buf, struct{ Heading, Body string }{heading, body}); err != nil {
-		return err
-	}
-	return c.HTMLBlob(http.StatusOK, buf.Bytes())
-}
-
-func (s *Server) renderError(c echo.Context, status int, body string) error {
-	var buf bytes.Buffer
-	if err := tplMessage.Execute(&buf, struct{ Heading, Body string }{"エラー", body}); err != nil {
-		return err
-	}
-	return c.HTMLBlob(status, buf.Bytes())
 }
 
 type mockLoginView struct {

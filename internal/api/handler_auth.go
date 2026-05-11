@@ -52,15 +52,15 @@ func newRandomToken() (string, error) {
 func (s *Server) handleAuthStart(c echo.Context) error {
 	proposedName := strings.TrimSpace(c.QueryParam("display_name"))
 	if !validDisplayName(proposedName) {
-		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
+		return s.renderMessageCode(c, msgBadRequest)
 	}
 
 	sigHex := strings.TrimSpace(c.QueryParam("sig"))
 	if sigHex == "" {
-		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
+		return s.renderMessageCode(c, msgBadRequest)
 	}
 	if !auth.VerifyHex(s.cfg.AuthSecret, sigHex, []byte(proposedName)) {
-		return s.renderError(c, http.StatusBadRequest, "リクエストが不正です。")
+		return s.renderMessageCode(c, msgBadRequest)
 	}
 
 	mockDiscordID, mockUsername := "", ""
@@ -70,7 +70,7 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 			id, err := newMockDiscordID()
 			if err != nil {
 				s.log.Error("mock discord_id", "err", err)
-				return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+				return s.renderMessageCode(c, msgServerError)
 			}
 			mockDiscordID = id
 		}
@@ -89,20 +89,20 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 	nameBanned, err := s.authDB.IsDisplayNameBanned(c.Request().Context(), proposedName)
 	if err != nil {
 		s.log.Error("display name ban check", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 	if nameBanned {
-		return s.renderError(c, http.StatusForbidden, "このユーザー名は使用できません。")
+		return s.renderMessageCode(c, msgNameBanned, proposedName)
 	}
 
 	state, err := newRandomToken()
 	if err != nil {
 		s.log.Error("state token", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 	if err := s.authDB.InsertOAuthState(c.Request().Context(), state, proposedName, s.cfg.OAuthStateTTL); err != nil {
 		s.log.Error("insert oauth state", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 
 	if s.cfg.MockOAuth {
@@ -121,19 +121,19 @@ func (s *Server) handleAuthCallback(c echo.Context) error {
 	state := strings.TrimSpace(c.QueryParam("state"))
 	code := strings.TrimSpace(c.QueryParam("code"))
 	if state == "" || code == "" {
-		return s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
+		return s.renderMessageCode(c, msgSessionInvalid)
 	}
 
 	stateRow, err := s.authDB.ConsumeOAuthState(ctx, state)
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrOAuthStateNotFound):
-			return s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
+			return s.renderMessageCode(c, msgSessionInvalid)
 		case errors.Is(err, db.ErrOAuthStateExpired):
-			return s.renderError(c, http.StatusBadRequest, "セッションが期限切れです。最初からやり直してください。")
+			return s.renderMessageCode(c, msgSessionExpired)
 		default:
 			s.log.Error("consume oauth state", "err", err)
-			return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+			return s.renderMessageCode(c, msgServerError)
 		}
 	}
 
@@ -141,28 +141,28 @@ func (s *Server) handleAuthCallback(c echo.Context) error {
 	if err != nil {
 		s.log.Error("oauth exchange", "err", err)
 		if errors.Is(err, oauth.ErrRateLimited) {
-			return s.renderError(c, http.StatusTooManyRequests, "レート制限に達しました。しばらく待ってから再試行してください。")
+			return s.renderMessageCode(c, msgRateLimited)
 		}
-		return s.renderError(c, http.StatusBadGateway, "Discord認証に失敗しました。")
+		return s.renderMessageCode(c, msgOAuthFailed)
 	}
 
 	banned, err := s.authDB.IsDiscordIDBanned(ctx, user.ID)
 	if err != nil {
 		s.log.Error("ban check", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 	if banned {
-		return s.renderError(c, http.StatusForbidden, "このDiscordアカウントは使用できません。")
+		return s.renderMessageCode(c, msgDiscordBanned)
 	}
 
 	sessionToken, err := newRandomToken()
 	if err != nil {
 		s.log.Error("session token", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 	if err := s.authDB.InsertAuthSession(ctx, sessionToken, user.ID, user.Username, stateRow.ProposedName, s.cfg.SessionTTL); err != nil {
 		s.log.Error("insert auth session", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	}
 
 	s.setPortalSessionCookie(c, sessionToken)
@@ -173,22 +173,20 @@ func (s *Server) handleAuthPortalView(c echo.Context) error {
 	ctx := c.Request().Context()
 	token := readPortalSessionCookie(c)
 	if token == "" {
-		return s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
+		return s.renderMessageCode(c, msgSessionInvalid)
 	}
 	session, err := s.authDB.GetAuthSession(ctx, token)
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrAuthSessionNotFound):
 			s.clearPortalSessionCookie(c)
-			return s.renderError(c, http.StatusBadRequest,
-				"セッションが無効です。最初からやり直してください。")
+			return s.renderMessageCode(c, msgSessionInvalid)
 		case errors.Is(err, db.ErrAuthSessionExpired):
 			s.clearPortalSessionCookie(c)
-			return s.renderError(c, http.StatusBadRequest,
-				"セッションが期限切れです。最初からやり直してください。")
+			return s.renderMessageCode(c, msgSessionExpired)
 		default:
 			s.log.Error("get auth session", "err", err)
-			return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+			return s.renderMessageCode(c, msgServerError)
 		}
 	}
 	authed := &oauth.User{ID: session.DiscordID, Username: session.DiscordUsername}
@@ -206,7 +204,7 @@ func readPortalSessionCookie(c echo.Context) string {
 func (s *Server) consumePortalSession(c echo.Context) (*db.AuthSession, error) {
 	token := readPortalSessionCookie(c)
 	if token == "" {
-		_ = s.renderError(c, http.StatusBadRequest, "セッションが無効です。最初からやり直してください。")
+		_ = s.renderMessageCode(c, msgSessionInvalid)
 		return nil, db.ErrAuthSessionNotFound
 	}
 	session, err := s.authDB.ConsumeAuthSession(c.Request().Context(), token)
@@ -216,14 +214,12 @@ func (s *Server) consumePortalSession(c echo.Context) (*db.AuthSession, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrAuthSessionNotFound):
-			_ = s.renderError(c, http.StatusBadRequest,
-				"セッションが無効です。最初からやり直してください。")
+			_ = s.renderMessageCode(c, msgSessionInvalid)
 		case errors.Is(err, db.ErrAuthSessionExpired):
-			_ = s.renderError(c, http.StatusBadRequest,
-				"セッションが期限切れです。最初からやり直してください。")
+			_ = s.renderMessageCode(c, msgSessionExpired)
 		default:
 			s.log.Error("consume auth session", "err", err)
-			_ = s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+			_ = s.renderMessageCode(c, msgServerError)
 		}
 		return nil, err // レスポンス書き込み済み。err は常に non-nil
 	}
@@ -238,9 +234,9 @@ func (s *Server) handleAuthRegister(c echo.Context) error {
 	}
 	if banned, err := s.authDB.IsDiscordIDBanned(ctx, session.DiscordID); err != nil {
 		s.log.Error("register: ban check", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	} else if banned {
-		return s.renderError(c, http.StatusForbidden, "このDiscordアカウントは使用できません。")
+		return s.renderMessageCode(c, msgDiscordBanned)
 	}
 	return s.commitRegister(c, session.DiscordID, session.ProposedName)
 }
@@ -253,9 +249,9 @@ func (s *Server) handleAuthUnregister(c echo.Context) error {
 	}
 	if banned, err := s.authDB.IsDiscordIDBanned(ctx, session.DiscordID); err != nil {
 		s.log.Error("unregister: ban check", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "サーバーエラーが発生しました。")
+		return s.renderMessageCode(c, msgServerError)
 	} else if banned {
-		return s.renderError(c, http.StatusForbidden, "このDiscordアカウントは使用できません。")
+		return s.renderMessageCode(c, msgDiscordBanned)
 	}
 	return s.commitUnregister(c, session.DiscordID)
 }
@@ -265,33 +261,34 @@ func (s *Server) commitRegister(c echo.Context, discordID, displayName string) e
 	if err != nil {
 		switch {
 		case errors.Is(err, registration.ErrBanned):
-			return s.renderError(c, http.StatusForbidden, "このDiscordアカウントは使用できません。")
+			return s.renderMessageCode(c, msgDiscordBanned)
 		case errors.Is(err, registration.ErrDisplayNameBanned):
-			return s.renderError(c, http.StatusForbidden, "このユーザー名は使用できません。")
+			return s.renderMessageCode(c, msgNameBanned, displayName)
 		case errors.Is(err, registration.ErrDisplayNameTaken):
-			return s.renderError(c, http.StatusConflict,
-				"このVRChatユーザー名は別のDiscordアカウントで登録されています。"+
-					"そのDiscordアカウントでログインして登録解除してから、再度お試しください。"+
-					"元のアカウントが不明・ログインできない場合は管理者までお問い合わせください。")
+			return s.renderMessageCode(c, msgNameTaken, displayName)
 		default:
 			s.log.Error("register", "err", err)
-			return s.renderError(c, http.StatusInternalServerError, "登録に失敗しました。")
+			return s.renderMessageCode(c, msgRegisterFailed)
 		}
 	}
-	heading := "登録完了"
+	action := tokenActionRegister
 	if res.IsRenewal {
-		heading = "トークンを再発行しました（旧トークンは無効化されました）"
+		if res.PrevDisplayName != res.DisplayName {
+			action = tokenActionRename
+		} else {
+			action = tokenActionRenewal
+		}
 	}
-	return s.renderToken(c, heading, res.DisplayName, res.JWT)
+	return s.renderToken(c, action, res.DisplayName, res.JWT)
 }
 
 func (s *Server) commitUnregister(c echo.Context, discordID string) error {
 	if err := s.authDB.Unregister(c.Request().Context(), discordID); err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
-			return s.renderError(c, http.StatusNotFound, "このアカウントは登録されていません。")
+			return s.renderMessageCode(c, msgNotRegistered)
 		}
 		s.log.Error("unregister", "err", err)
-		return s.renderError(c, http.StatusInternalServerError, "登録解除に失敗しました。")
+		return s.renderMessageCode(c, msgUnregisterFailed)
 	}
-	return s.renderMessage(c, "登録解除完了", "Discord連携を解除しました。")
+	return s.renderMessageCode(c, msgUnregistered)
 }

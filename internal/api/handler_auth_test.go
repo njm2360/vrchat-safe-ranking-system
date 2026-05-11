@@ -222,7 +222,7 @@ func TestAuthCallback_RegisteredSameName_PortalShowsReissue(t *testing.T) {
 		t.Fatalf("status = %d", rr.Code)
 	}
 	// Both Reissue and Unregister must be offered.
-	if !strings.Contains(body, "トークンを再発行") {
+	if !strings.Contains(body, "トークン再発行") {
 		t.Errorf("portal should offer Reissue; body=%q", body)
 	}
 	if !hasActionForm(body, "unregister") {
