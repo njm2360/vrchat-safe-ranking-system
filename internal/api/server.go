@@ -138,6 +138,7 @@ func (s *Server) Handler() http.Handler {
 		},
 	}))
 	e.Use(middleware.Recover())
+	e.Use(securityHeaders(s.cfg.CookieSecure))
 
 	e.GET("/save", s.handleSave, s.optionalJWT)
 	e.GET("/load", s.handleLoad, s.optionalJWT)

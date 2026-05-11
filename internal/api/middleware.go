@@ -10,6 +10,21 @@ import (
 
 const claimsKey = "claims"
 
+func securityHeaders(hstsEnabled bool) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			h := c.Response().Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			if hstsEnabled {
+				h.Set("Strict-Transport-Security", "max-age=31536000")
+			}
+			return next(c)
+		}
+	}
+}
+
 func (s *Server) optionalJWT(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		jwtStr := strings.TrimSpace(c.QueryParam("jwt"))
