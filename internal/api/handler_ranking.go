@@ -25,7 +25,7 @@ func (s *Server) handleRanking(c echo.Context) error {
 	default:
 		return c.String(http.StatusBadRequest, "bad request")
 	}
-	rows, err := s.saves.Ranking(c.Request().Context(), limit, verifiedOnly)
+	rows, err := s.rankingCache.get(c.Request().Context(), limit, verifiedOnly)
 	if err != nil {
 		s.log.Error("ranking", "err", err)
 		return c.String(http.StatusInternalServerError, "internal error")

@@ -69,14 +69,15 @@ type Config struct {
 }
 
 type Server struct {
-	cfg      Config
-	saves    SaveStore
-	authDB   AuthStore
-	jwt      JWTVerifier
-	idgen    IDGen
-	provider oauth.Provider
-	regSvc   *registration.Service
-	log      *slog.Logger
+	cfg          Config
+	saves        SaveStore
+	authDB       AuthStore
+	jwt          JWTVerifier
+	idgen        IDGen
+	provider     oauth.Provider
+	regSvc       *registration.Service
+	log          *slog.Logger
+	rankingCache *rankingCache
 }
 
 func New(cfg Config, saves SaveStore, authDB AuthStore, jwt JWTVerifier, idgen IDGen, provider oauth.Provider, regSvc *registration.Service, log *slog.Logger) *Server {
@@ -84,14 +85,15 @@ func New(cfg Config, saves SaveStore, authDB AuthStore, jwt JWTVerifier, idgen I
 		log = slog.Default()
 	}
 	return &Server{
-		cfg:      cfg,
-		saves:    saves,
-		authDB:   authDB,
-		jwt:      jwt,
-		idgen:    idgen,
-		provider: provider,
-		regSvc:   regSvc,
-		log:      log,
+		cfg:          cfg,
+		saves:        saves,
+		authDB:       authDB,
+		jwt:          jwt,
+		idgen:        idgen,
+		provider:     provider,
+		regSvc:       regSvc,
+		log:          log,
+		rankingCache: newRankingCache(saves),
 	}
 }
 
