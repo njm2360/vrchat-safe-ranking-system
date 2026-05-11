@@ -172,12 +172,19 @@ paths:
         Discord OAuth フローを開始し、プロバイダの認可ページへリダイレクトします。
         MockOAuth モードが有効な場合は `/auth/mock-login` へリダイレクトします。
       parameters:
-        - name: name
+        - name: display_name
           in: query
           required: true
           schema:
             type: string
           description: 登録したい VRChat 表示名
+        - name: sig
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            `HMAC-SHA256(HMAC_AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex
         - name: fake_discord_id
           in: query
           required: false
@@ -191,12 +198,12 @@ paths:
           schema:
             type: string
           description: |
-            (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `name` を流用。
+            (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `display_name` を流用。
       responses:
         "302":
           description: OAuth プロバイダ (または `/auth/mock-login`) へリダイレクト
         "400":
-          description: 名前が未指定または無効な文字を含む / mock パラメータが不正
+          description: display_name / sig が未指定または不正
         "403":
           description: 表示名が BAN 済
         "500":

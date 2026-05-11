@@ -11,6 +11,7 @@ HMAC署名に加えてDiscord OAuth連携のJWTを併用し、データを保護
 | 層                                                  | 守るもの                                  | 突破に必要なもの                                  |
 | --------------------------------------------------- | ----------------------------------------- | ------------------------------------------------- |
 | HMAC 署名 (`HMAC_SAVE_SECRET` / `HMAC_LOAD_SECRET`) | URLクエリ書き換え・ロード応答のMITM改ざん | Udon内に埋め込まれた鍵 (デコンパイル等で抽出可能) |
+| HMAC 署名 (`HMAC_AUTH_SECRET`)                      | OAuthフローでのユーザー名詐称登録         | Udon内に埋め込まれた鍵 (デコンパイル等で抽出可能) |
 | JWT 認証 (Discord OAuthで発行)                      | 連携済みユーザー名への書き込み・読み出し  | JWTトークン (秘密鍵はサーバー)                    |
 
 ### 認証モデル
@@ -39,7 +40,7 @@ HMAC署名に加えてDiscord OAuth連携のJWTを併用し、データを保護
 ```bash
 cp .env.example .env
 # .env を開いて以下を設定:
-#   JWT_SECRET / HMAC_SAVE_SECRET / HMAC_LOAD_SECRET  — 16バイト以上の乱数
+#   JWT_SECRET / HMAC_SAVE_SECRET / HMAC_LOAD_SECRET / HMAC_AUTH_SECRET  — 16バイト以上の乱数
 #   DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET         — Discord アプリの OAuth2 クレデンシャル
 #   BASE_URL                                          — 公開 URL
 #   OAUTH_REDIRECT_URL                                — 省略時 <BASE_URL>/auth/callback
@@ -78,7 +79,7 @@ go run ./cmd/vrcsim e2e --name alice --score 1234
 `.env` に `OAUTH_MODE=mock` を設定するとブラウザフローは以下に置き換わる:
 
 ```
-/auth/start?name=alice&fake_discord_id=100000000000000001&fake_username=alice.dev
+/auth/start?display_name=alice&sig=<hex>&fake_discord_id=100000000000000001&fake_username=alice.dev
    ↓ 302
 /auth/mock-login?state=...&discord_id=100000000000000001&username=alice.dev   (Discord 認可画面の代わりに HTML フォームを表示)
    ↓ POST /auth/mock-login (フォーム送信)
@@ -88,30 +89,31 @@ go run ./cmd/vrcsim e2e --name alice --score 1234
    ↓ 200 HTML (ポータル画面: @username + 現状表示 + アクションボタン)
 ```
 
-どちらのクエリも optional:
+`display_name` と `sig` は必須、それ以外は optional:
 
+- `sig` = `HMAC-SHA256(HMAC_AUTH_SECRET, <display_name bytes>)` の lowercase hex
 - `fake_discord_id` 省略時はリクエストごとに 18 桁ランダム snowflake を生成
-- `fake_username` 省略時は `name` クエリの値をそのまま流用
+- `fake_username` 省略時は `display_name` クエリの値をそのまま流用
 
 ```bash
 # .env: OAUTH_MODE=mock を設定
 go run ./cmd/api
 
-# 最小: name だけで十分。ID は乱数、username は alice として表示される
-xdg-open 'http://localhost:8100/auth/start?name=alice'
+# 署名付き URL は vrcsim から取得 (sig を手で計算しなくて済む)
+xdg-open "$(go run ./cmd/vrcsim auth-start-url --display-name alice)"
 
-# 同じ ID で再アクセスしたい場合は明示的に指定
-xdg-open 'http://localhost:8100/auth/start?name=alice&fake_discord_id=100000000000000001'
+# 同じ ID で再アクセスしたい場合
+xdg-open "$(go run ./cmd/vrcsim auth-start-url --display-name alice --fake-discord-id 100000000000000001)"
 
 # username だけ Discord 風に変えたい場合
-xdg-open 'http://localhost:8100/auth/start?name=alice&fake_username=alice.dev'
+xdg-open "$(go run ./cmd/vrcsim auth-start-url --display-name alice --fake-username alice.dev)"
 ```
 
 ## 個別動作確認
 
 ```bash
-# ブラウザで認証開始 (Discord モード)
-'http://localhost:8100/auth/start?name=alice'
+# ブラウザで認証開始 (Discord モード) — sig は vrcsim が計算する
+xdg-open "$(go run ./cmd/vrcsim auth-start-url --display-name alice)"
 
 # セーブ (HMACは自動計算)
 go run ./cmd/vrcsim save --score 9999 --display-name alice --jwt 'eyJ...'
@@ -149,15 +151,17 @@ go run ./cmd/admin invalidate-token --jti <jti>
 
 ### OAuth フロー (ブラウザ)
 
-| Method | Path                             | 用途                                                                   |
-| ------ | -------------------------------- | ---------------------------------------------------------------------- |
-| GET    | `/auth/start?name=<DisplayName>` | Discord OAuth を開始 (name のみ必須)                                   |
-| GET    | `/auth/callback?code=&state=`    | Discord からの戻り。state を消費しセッション Cookie を発行             |
-| GET    | `/auth/portal`                   | ポータル画面のレンダリング (Cookie 検証のみ、consume なし、リロード可) |
-| POST   | `/auth/register`                 | 登録 / トークン再発行 / 改名のコミット (セッション Cookie を消費)      |
-| POST   | `/auth/unregister`               | 登録解除のコミット (セッション Cookie を消費)                          |
+| Method | Path                                               | 用途                                                                   |
+| ------ | -------------------------------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/auth/start?display_name=<DisplayName>&sig=<hex>` | Discord OAuth を開始 (display_name と sig が必須)                      |
+| GET    | `/auth/callback?code=&state=`                      | Discord からの戻り。state を消費しセッション Cookie を発行             |
+| GET    | `/auth/portal`                                     | ポータル画面のレンダリング (Cookie 検証のみ、consume なし、リロード可) |
+| POST   | `/auth/register`                                   | 登録 / トークン再発行 / 改名のコミット (セッション Cookie を消費)      |
+| POST   | `/auth/unregister`                                 | 登録解除のコミット (セッション Cookie を消費)                          |
 
-`/auth/start?name=alice` は CSRF 用の state を発行し Discord 認可画面に 302 する。
+`/auth/start?display_name=alice&sig=…` は CSRF 用の state を発行し Discord 認可画面に 302 する。
+`sig` は `HMAC-SHA256(HMAC_AUTH_SECRET, display_name)` の lowercase hex で、Udon ワールド内に
+埋め込まれた鍵を持つクライアントのみが OAuth フローを起動できるようにする
 ユーザーが認可すると `/auth/callback` に戻り、state を消費しつつ単発使用のセッション
 Cookie (`vsrs_portal_session`, Path=`/auth`, HttpOnly) を発行して `/auth/portal` に
 **303 リダイレクト**する。
@@ -253,11 +257,12 @@ field 順は構造体定義順) HMAC を計算する想定。
 
 ## HMAC 対象バイト列フォーマット
 
-| 場面                   | メッセージ                                       | 鍵                 | 方向                    |
-| ---------------------- | ------------------------------------------------ | ------------------ | ----------------------- |
-| `/save` リクエスト sig | `<data raw bytes> ‖ 0x00 ‖ <display_name bytes>` | `HMAC_SAVE_SECRET` | クライアント → サーバー |
-| `/load` リクエスト sig | `<display_name bytes>`                           | `HMAC_LOAD_SECRET` | クライアント → サーバー |
-| `/load` レスポンス sig | レスポンス内 `data` の raw bytes                 | `HMAC_LOAD_SECRET` | サーバー → クライアント |
+| 場面                         | メッセージ                                       | 鍵                 | 方向                    |
+| ---------------------------- | ------------------------------------------------ | ------------------ | ----------------------- |
+| `/save` リクエスト sig       | `<data raw bytes> ‖ 0x00 ‖ <display_name bytes>` | `HMAC_SAVE_SECRET` | クライアント → サーバー |
+| `/load` リクエスト sig       | `<display_name bytes>`                           | `HMAC_LOAD_SECRET` | クライアント → サーバー |
+| `/load` レスポンス sig       | レスポンス内 `data` の raw bytes                 | `HMAC_LOAD_SECRET` | サーバー → クライアント |
+| `/auth/start` リクエスト sig | `<display_name bytes>`                           | `HMAC_AUTH_SECRET` | クライアント → サーバー |
 
 パートが複数あるものは 1 バイトの `0x00` 区切りで連結する (実装: [internal/auth/hmac.go](internal/auth/hmac.go))。
 `data` 部のキャノニカル表現は `savedata.Data` を Go の `encoding/json` で出力したバイト列

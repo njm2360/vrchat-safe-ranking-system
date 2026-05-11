@@ -69,13 +69,16 @@ type AuthRegisterParams struct {
 
 // AuthStartParams defines parameters for AuthStart.
 type AuthStartParams struct {
-	// Name 登録したい VRChat 表示名
-	Name string `form:"name" json:"name"`
+	// DisplayName 登録したい VRChat 表示名
+	DisplayName string `form:"display_name" json:"display_name"`
+
+	// Sig `HMAC-SHA256(HMAC_AUTH_SECRET, <display_name の raw bytes>)` の lowercase hex
+	Sig string `form:"sig" json:"sig"`
 
 	// FakeDiscordId (Mock OAuth モード専用) 18 桁の数字。省略時はランダムな snowflake を生成。
 	FakeDiscordId *string `form:"fake_discord_id,omitempty" json:"fake_discord_id,omitempty"`
 
-	// FakeUsername (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `name` を流用。
+	// FakeUsername (Mock OAuth モード専用) Discord ユーザー名の代替。省略時は `display_name` を流用。
 	FakeUsername *string `form:"fake_username,omitempty" json:"fake_username,omitempty"`
 }
 
