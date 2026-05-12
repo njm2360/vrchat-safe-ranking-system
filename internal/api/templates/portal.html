@@ -41,37 +41,52 @@
   {{end}}
 </div>
 
-{{if or .RegisterAction.Action .UnregisterAction.Action}}
+{{if or .ShowRegister .ShowReissue .ShowRename .ShowUnregister}}
 <div class="section-card">
   <div class="section-label">操作</div>
 
-  {{with .RegisterAction}}{{if .Action}}
+  {{if .ShowRegister}}
   <div class="action-row">
-    <form method="POST" action="/auth/{{.Action}}" class="mb-0">
-      <button type="submit"
-        class="btn btn-sm action-btn {{if .Primary}}btn-primary{{else}}btn-secondary{{end}}">{{.ButtonText}}</button>
+    <form method="POST" action="/auth/register" class="mb-0">
+      <button type="submit" class="btn btn-sm action-btn btn-primary">登録</button>
+    </form>
+    <span class="text-muted" style="font-size:0.85rem">このユーザー名で新規登録します。</span>
+  </div>
+  {{end}}
+
+  {{if .ShowReissue}}
+  <div class="action-row">
+    <form method="POST" action="/auth/register" class="mb-0">
+      <button type="submit" class="btn btn-sm action-btn btn-secondary">トークン再発行</button>
+    </form>
+    <span class="text-muted" style="font-size:0.85rem">新しいトークンを発行します。現在のトークンは無効化されます。</span>
+  </div>
+  {{end}}
+
+  {{if .ShowRename}}
+  <div class="action-row">
+    <form method="POST" action="/auth/register" class="mb-0">
+      <button type="submit" class="btn btn-sm action-btn btn-secondary">ユーザー名変更</button>
     </form>
     <div>
-      {{if $.ShowProposedName}}
       <div class="mb-1" style="font-size:0.8rem">
-        <span class="text-muted">{{$.CurrentName}}</span>
+        <span class="text-muted">{{.CurrentName}}</span>
         <span class="text-muted mx-1">→</span>
-        <strong class="text-dark">{{$.ProposedName}}</strong>
+        <strong class="text-dark">{{.ProposedName}}</strong>
       </div>
-      {{end}}
-      <span class="text-muted" style="font-size:0.85rem">{{.Description}}</span>
+      <span class="text-muted" style="font-size:0.85rem">ユーザー名を変更します。現在のトークンは無効化されます。</span>
     </div>
   </div>
-  {{end}}{{end}}
+  {{end}}
 
-  {{with .UnregisterAction}}{{if .Action}}
+  {{if .ShowUnregister}}
   <div class="action-row">
-    <form method="POST" action="/auth/{{.Action}}" class="mb-0">
-      <button type="submit" class="btn btn-sm action-btn btn-danger">{{.ButtonText}}</button>
+    <form method="POST" action="/auth/unregister" class="mb-0">
+      <button type="submit" class="btn btn-sm action-btn btn-danger">登録解除</button>
     </form>
-    <span class="text-muted" style="font-size:0.85rem">{{.Description}}</span>
+    <span class="text-muted" style="font-size:0.85rem">Discord連携を解除し、現在のトークンを無効化します。</span>
   </div>
-  {{end}}{{end}}
+  {{end}}
 
 </div>
 {{end}}

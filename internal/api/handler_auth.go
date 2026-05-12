@@ -75,14 +75,14 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 			mockDiscordID = id
 		}
 		if !validMockDiscordID(mockDiscordID) {
-			return c.String(http.StatusBadRequest, "リクエストが不正です。")
+			return s.renderMessageCode(c, msgBadRequest)
 		}
 		mockUsername = strings.TrimSpace(c.QueryParam("fake_username"))
 		if mockUsername == "" {
 			mockUsername = proposedName
 		}
 		if !validMockUsername(mockUsername) {
-			return c.String(http.StatusBadRequest, "リクエストが不正です。")
+			return s.renderMessageCode(c, msgBadRequest)
 		}
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 		return s.renderMessageCode(c, msgServerError)
 	}
 	if nameBanned {
-		return s.renderMessageCode(c, msgNameBanned, proposedName)
+		return s.renderMessageCodeWithName(c, msgNameBanned, proposedName)
 	}
 
 	state, err := newRandomToken()
@@ -253,7 +253,7 @@ func (s *Server) handleAuthUnregister(c echo.Context) error {
 	} else if banned {
 		return s.renderMessageCode(c, msgDiscordBanned)
 	}
-	return s.commitUnregister(c, session.DiscordID)
+	return s.commitUnregister(c, session.DiscordID, session.ProposedName)
 }
 
 func (s *Server) commitRegister(c echo.Context, discordID, displayName string) error {
@@ -263,9 +263,9 @@ func (s *Server) commitRegister(c echo.Context, discordID, displayName string) e
 		case errors.Is(err, registration.ErrBanned):
 			return s.renderMessageCode(c, msgDiscordBanned)
 		case errors.Is(err, registration.ErrDisplayNameBanned):
-			return s.renderMessageCode(c, msgNameBanned, displayName)
+			return s.renderMessageCodeWithName(c, msgNameBanned, displayName)
 		case errors.Is(err, registration.ErrDisplayNameTaken):
-			return s.renderMessageCode(c, msgNameTaken, displayName)
+			return s.renderMessageCodeWithName(c, msgNameTaken, displayName)
 		default:
 			s.log.Error("register", "err", err)
 			return s.renderMessageCode(c, msgRegisterFailed)
@@ -282,10 +282,10 @@ func (s *Server) commitRegister(c echo.Context, discordID, displayName string) e
 	return s.renderToken(c, action, res.DisplayName, res.JWT)
 }
 
-func (s *Server) commitUnregister(c echo.Context, discordID string) error {
+func (s *Server) commitUnregister(c echo.Context, discordID, displayName string) error {
 	if err := s.authDB.Unregister(c.Request().Context(), discordID); err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
-			return s.renderMessageCode(c, msgNotRegistered)
+			return s.renderMessageCodeWithName(c, msgNotRegistered, displayName)
 		}
 		s.log.Error("unregister", "err", err)
 		return s.renderMessageCode(c, msgUnregisterFailed)

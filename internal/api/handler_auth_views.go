@@ -53,35 +53,20 @@ func execNamed(t *template.Template, name string, data any) (template.HTML, erro
 	return template.HTML(buf.String()), nil
 }
 
-type portalAction struct {
-	Action      string // "register" or "unregister" — used to build the form action URL
-	ButtonText  string
-	Description string
-	Primary     bool
-}
-
 type portalView struct {
-	DiscordUsername  string // empty if the IdP didn't return a username
-	ProposedName     string
-	CurrentName      string // empty if not registered
-	NameBanned       bool   // proposedName is banned by an administrator
-	NameConflict     bool   // proposedName held by another discord_id
-	RegisterAction   portalAction
-	UnregisterAction portalAction
+	DiscordUsername string // empty if the IdP didn't return a username
+	ProposedName    string
+	CurrentName     string // empty if not registered
+	NameBanned      bool   // proposedName is banned by an administrator
+	NameConflict    bool   // proposedName held by another discord_id
+	ShowRegister    bool
+	ShowReissue     bool
+	ShowRename      bool
+	ShowUnregister  bool
 }
 
 func (v portalView) Registered() bool { return v.CurrentName != "" }
 
-// ShowProposedName returns true only when a registered user is changing to a
-// different name. New registration and token re-issue show the name in the
-// status card instead, so the operations card doesn't need to repeat it.
-func (v portalView) ShowProposedName() bool {
-	return v.Registered() && v.ProposedName != v.CurrentName
-}
-
-// renderPortal builds the per-user portal view: shows the authenticated
-// Discord identity, the current registration state (display name + active
-// JWT if any), and offers context-appropriate action buttons.
 func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName string) error {
 	ctx := c.Request().Context()
 
@@ -112,8 +97,8 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 		ProposedName:    proposedName,
 	}
 
-	activeUser := current != nil
-	if activeUser {
+	userRegistered := current != nil
+	if userRegistered {
 		view.CurrentName = current.DisplayName
 	}
 
@@ -122,32 +107,15 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 		view.NameBanned = true
 	case nameTakenByOther:
 		view.NameConflict = true
-	case !activeUser:
-		view.RegisterAction = portalAction{
-			Action:      "register",
-			ButtonText:  "登録",
-			Description: "このユーザー名で新規登録します。",
-			Primary:     true,
-		}
+	case !userRegistered:
+		view.ShowRegister = true
 	case current.DisplayName == proposedName:
-		view.RegisterAction = portalAction{
-			Action:      "register",
-			ButtonText:  "トークン再発行",
-			Description: "新しいトークンを発行します。現在のトークンは無効化されます。",
-		}
+		view.ShowReissue = true
 	default:
-		view.RegisterAction = portalAction{
-			Action:      "register",
-			ButtonText:  "ユーザー名変更",
-			Description: "ユーザー名を変更します。現在のトークンは無効化されます。",
-		}
+		view.ShowRename = true
 	}
-	if activeUser && !nameTakenByOther {
-		view.UnregisterAction = portalAction{
-			Action:      "unregister",
-			ButtonText:  "登録解除",
-			Description: "Discord連携を解除し、現在のトークンを無効化します。",
-		}
+	if userRegistered && !nameTakenByOther {
+		view.ShowUnregister = true
 	}
 
 	var buf bytes.Buffer
@@ -157,16 +125,20 @@ func (s *Server) renderPortal(c echo.Context, authed *oauth.User, proposedName s
 	return c.HTMLBlob(http.StatusOK, buf.Bytes())
 }
 
-func (s *Server) renderMessageCode(c echo.Context, code msgCode, displayName ...string) error {
-	data := struct {
+func (s *Server) renderMessageCode(c echo.Context, code msgCode) error {
+	return s.renderMessage(c, code, "")
+}
+
+func (s *Server) renderMessageCodeWithName(c echo.Context, code msgCode, displayName string) error {
+	return s.renderMessage(c, code, displayName)
+}
+
+func (s *Server) renderMessage(c echo.Context, code msgCode, displayName string) error {
+	var buf bytes.Buffer
+	if err := tplMessage.Execute(&buf, struct {
 		Code        msgCode
 		DisplayName string
-	}{Code: code}
-	if len(displayName) > 0 {
-		data.DisplayName = displayName[0]
-	}
-	var buf bytes.Buffer
-	if err := tplMessage.Execute(&buf, data); err != nil {
+	}{code, displayName}); err != nil {
 		return err
 	}
 	return c.HTMLBlob(code.status(), buf.Bytes())
