@@ -208,6 +208,11 @@ func TestReleaseDisplayName(t *testing.T) {
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710403", "victim_name", "j_atk", ""); err != nil {
 		t.Fatal(err)
 	}
+	// Seed a save so we can confirm latest_saves is dropped on release, matching
+	// the symmetry with Unregister.
+	if err := d.Save(ctx, "victim_name", &savedata.Data{Score: 100, GeneratedAt: time.Unix(1000, 0).UTC()}, jtiPtr("j_atk")); err != nil {
+		t.Fatal(err)
+	}
 	prior, err := d.ReleaseDisplayName(ctx, "victim_name", "hijack")
 	if err != nil {
 		t.Fatalf("ReleaseDisplayName: %v", err)
@@ -217,6 +222,13 @@ func TestReleaseDisplayName(t *testing.T) {
 	}
 	if black, _ := d.IsJTIBlacklisted(ctx, "j_atk"); !black {
 		t.Error("attacker jti should be blacklisted")
+	}
+	rows, err := d.Ranking(ctx, 10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("ranking should be empty after ReleaseDisplayName, got %+v", rows)
 	}
 	// users row gone — legitimate owner can now register the name.
 	if err := d.UpsertUserAndIssue(ctx, "119548486276710404", "victim_name", "j_vic", ""); err != nil {

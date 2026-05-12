@@ -158,6 +158,10 @@ func (db *DB) ReleaseDisplayName(ctx context.Context, displayName, reason string
 		return "", err
 	}
 	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM latest_saves WHERE display_name = ?`, displayName); err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM users WHERE display_name = ?`, displayName); err != nil {
 		return "", err
 	}
