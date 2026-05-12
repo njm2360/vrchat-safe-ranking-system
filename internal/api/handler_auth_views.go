@@ -32,10 +32,14 @@ func init() {
 			return execNamed(tplToken, fmt.Sprintf("tok_heading_%s", action), data)
 		},
 	}
-	tplToken = template.Must(template.New("token.html").Funcs(funcs).ParseFS(templateFS, "templates/token.html", "templates/shared.html"))
-	tplMessage = template.Must(template.New("message.html").Funcs(funcs).ParseFS(templateFS, "templates/message.html", "templates/shared.html"))
-	tplPortal = template.Must(template.New("portal.html").Funcs(funcs).ParseFS(templateFS, "templates/portal.html", "templates/shared.html"))
-	tplMockLogin = template.Must(template.New("mock_login.html").ParseFS(templateFS, "templates/mock_login.html"))
+	parse := func(page string, extra ...string) *template.Template {
+		files := append([]string{"templates/layout.html", "templates/" + page}, extra...)
+		return template.Must(template.New("layout.html").Funcs(funcs).ParseFS(templateFS, files...))
+	}
+	tplPortal = parse("portal.html", "templates/shared.html")
+	tplMessage = parse("message.html", "templates/shared.html")
+	tplToken = parse("token.html")
+	tplMockLogin = parse("mock_login.html")
 }
 
 func execNamed(t *template.Template, name string, data any) (template.HTML, error) {
