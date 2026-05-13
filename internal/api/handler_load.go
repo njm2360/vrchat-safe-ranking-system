@@ -25,8 +25,12 @@ func (s *Server) handleLoad(c echo.Context) error {
 	if sigHex == "" {
 		return c.String(http.StatusBadRequest, "missing sig")
 	}
-	if !auth.VerifyHex(s.cfg.LoadSecret, sigHex, []byte(displayName)) {
+	matchedKey, usedPrev, ok := s.cfg.LoadKeys.Verify(sigHex, []byte(displayName))
+	if !ok {
 		return c.String(http.StatusBadRequest, "invalid sig")
+	}
+	if usedPrev {
+		s.log.Warn("rotation: previous key accepted", "endpoint", "load", "display_name", displayName)
 	}
 
 	claims := claimsFromEcho(c)
@@ -62,7 +66,7 @@ func (s *Server) handleLoad(c echo.Context) error {
 		s.log.Error("marshal savedata", "err", err)
 		return c.String(http.StatusInternalServerError, "internal error")
 	}
-	sig := auth.SignHex(s.cfg.LoadSecret, dataBytes)
+	sig := auth.SignHex(matchedKey, dataBytes)
 
 	return c.JSONBlob(http.StatusOK, fmt.Appendf(nil, `{"data":%s,"sig":%q}`, dataBytes, sig))
 }

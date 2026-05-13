@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 )
 
 type Config struct {
@@ -16,9 +18,9 @@ type Config struct {
 	BaseURL       string
 	DBPath        string
 	JWTSecret     []byte
-	SaveSecret    []byte
-	LoadSecret    []byte
-	AuthSecret    []byte
+	SaveKeys      auth.KeySet
+	LoadKeys      auth.KeySet
+	AuthKeys      auth.KeySet
 	OAuthStateTTL time.Duration
 	SessionTTL    time.Duration
 
@@ -42,9 +44,6 @@ func Load() (*Config, error) {
 		BaseURL:             getEnv("BASE_URL", "http://localhost:8100"),
 		DBPath:              getEnv("DB_PATH", "./data/vrc.db"),
 		JWTSecret:           []byte(os.Getenv("JWT_SECRET")),
-		SaveSecret:          []byte(os.Getenv("SAVE_SECRET")),
-		LoadSecret:          []byte(os.Getenv("LOAD_SECRET")),
-		AuthSecret:          []byte(os.Getenv("AUTH_SECRET")),
 		OAuthStateTTL:       getEnvDuration("OAUTH_STATE_TTL", 5*time.Minute),
 		SessionTTL:          getEnvDuration("SESSION_TTL", 30*time.Minute),
 		DiscordClientID:     os.Getenv("DISCORD_CLIENT_ID"),
@@ -60,14 +59,15 @@ func Load() (*Config, error) {
 	if len(c.JWTSecret) < 16 {
 		return nil, errors.New("JWT_SECRET must be set and at least 16 bytes")
 	}
-	if len(c.SaveSecret) != 16 {
-		return nil, errors.New("SAVE_SECRET must be exactly 16 bytes")
+	var err error
+	if c.SaveKeys, err = loadKeySet("SAVE_SECRET"); err != nil {
+		return nil, err
 	}
-	if len(c.LoadSecret) != 16 {
-		return nil, errors.New("LOAD_SECRET must be exactly 16 bytes")
+	if c.LoadKeys, err = loadKeySet("LOAD_SECRET"); err != nil {
+		return nil, err
 	}
-	if len(c.AuthSecret) != 16 {
-		return nil, errors.New("AUTH_SECRET must be exactly 16 bytes")
+	if c.AuthKeys, err = loadKeySet("AUTH_SECRET"); err != nil {
+		return nil, err
 	}
 	switch c.OAuthMode {
 	case OAuthModeDiscord:
@@ -84,6 +84,25 @@ func Load() (*Config, error) {
 	}
 
 	return c, nil
+}
+
+func loadKeySet(base string) (auth.KeySet, error) {
+	curr := []byte(os.Getenv(base))
+	if len(curr) != 16 {
+		return auth.KeySet{}, fmt.Errorf("%s must be exactly 16 bytes", base)
+	}
+	prevRaw := os.Getenv(base + "_OLD")
+	if prevRaw == "" {
+		return auth.KeySet{Current: curr}, nil
+	}
+	prev := []byte(prevRaw)
+	if len(prev) != 16 {
+		return auth.KeySet{}, fmt.Errorf("%s_OLD must be exactly 16 bytes when set", base)
+	}
+	if string(prev) == string(curr) {
+		return auth.KeySet{}, fmt.Errorf("%s_OLD must differ from %s", base, base)
+	}
+	return auth.KeySet{Current: curr, Previous: prev}, nil
 }
 
 func getEnv(k, def string) string {

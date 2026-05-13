@@ -36,3 +36,19 @@ func VerifyHex(key []byte, gotHex string, parts ...[]byte) bool {
 	}
 	return subtle.ConstantTimeCompare(want, signParts(key, parts)) == 1
 }
+
+type KeySet struct {
+	Current  []byte
+	Previous []byte
+}
+
+func (ks KeySet) Verify(gotHex string, parts ...[]byte) (matched []byte, usedPrevious bool, ok bool) {
+	if VerifyHex(ks.Current, gotHex, parts...) {
+		return ks.Current, false, true
+	}
+	// Fallback OLD key if OLD key is configured
+	if len(ks.Previous) != 0 && VerifyHex(ks.Previous, gotHex, parts...) {
+		return ks.Previous, true, true
+	}
+	return nil, false, false
+}

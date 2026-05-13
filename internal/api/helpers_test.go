@@ -39,11 +39,22 @@ func newServer(saves api.SaveStore, jwt api.JWTVerifier, idgen api.IDGen) http.H
 	return newServerFull(saves, &fakeAuthStore{jtiOwner: true}, jwt, idgen, nil, nil)
 }
 
+func newServerWithKeys(saves api.SaveStore, jwt api.JWTVerifier, save, load, authKeys auth.KeySet) http.Handler {
+	cfg := api.Config{
+		SaveKeys:      save,
+		LoadKeys:      load,
+		AuthKeys:      authKeys,
+		OAuthStateTTL: 5 * time.Minute,
+		SessionTTL:    15 * time.Minute,
+	}
+	return api.New(cfg, saves, &fakeAuthStore{jtiOwner: true}, jwt, fakeIDGen{}, nil, nil, nil).Handler()
+}
+
 func newServerFull(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifier, idgen api.IDGen, provider oauth.Provider, regSvc *registration.Service) http.Handler {
 	cfg := api.Config{
-		SaveSecret:    testSaveSecret,
-		LoadSecret:    testLoadSecret,
-		AuthSecret:    testAuthSecret,
+		SaveKeys:      auth.KeySet{Current: testSaveSecret},
+		LoadKeys:      auth.KeySet{Current: testLoadSecret},
+		AuthKeys:      auth.KeySet{Current: testAuthSecret},
 		OAuthStateTTL: 5 * time.Minute,
 		SessionTTL:    15 * time.Minute,
 	}
@@ -52,9 +63,9 @@ func newServerFull(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifie
 
 func newMockServer(saves api.SaveStore, authDB api.AuthStore, jwt api.JWTVerifier, idgen api.IDGen, regSvc *registration.Service) http.Handler {
 	cfg := api.Config{
-		SaveSecret:    testSaveSecret,
-		LoadSecret:    testLoadSecret,
-		AuthSecret:    testAuthSecret,
+		SaveKeys:      auth.KeySet{Current: testSaveSecret},
+		LoadKeys:      auth.KeySet{Current: testLoadSecret},
+		AuthKeys:      auth.KeySet{Current: testAuthSecret},
 		OAuthStateTTL: 5 * time.Minute,
 		SessionTTL:    15 * time.Minute,
 		MockOAuth:     true,

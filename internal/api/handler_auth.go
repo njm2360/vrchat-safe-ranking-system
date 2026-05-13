@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
-	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
 	"github.com/njm2360/vrchat-ranking-system/internal/registration"
@@ -59,8 +58,12 @@ func (s *Server) handleAuthStart(c echo.Context) error {
 	if sigHex == "" {
 		return s.renderMessageCode(c, msgBadRequest)
 	}
-	if !auth.VerifyHex(s.cfg.AuthSecret, sigHex, []byte(proposedName)) {
+	_, usedPrev, ok := s.cfg.AuthKeys.Verify(sigHex, []byte(proposedName))
+	if !ok {
 		return s.renderMessageCode(c, msgBadRequest)
+	}
+	if usedPrev {
+		s.log.Warn("rotation: previous key accepted", "endpoint", "auth/start", "display_name", proposedName)
 	}
 
 	mockDiscordID, mockUsername := "", ""

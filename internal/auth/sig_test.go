@@ -63,3 +63,54 @@ func TestSignHexMultipartSeparator(t *testing.T) {
 		t.Errorf("multi-part sig %s != joined-with-NUL sig %s", multi, joined)
 	}
 }
+
+func TestKeySetVerify(t *testing.T) {
+	curr := []byte("curr-secret-16by")
+	prev := []byte("prev-secret-16by")
+	msg := []byte("alice|1234")
+
+	t.Run("current matches", func(t *testing.T) {
+		ks := auth.KeySet{Current: curr, Previous: prev}
+		matched, usedPrev, ok := ks.Verify(auth.SignHex(curr, msg), msg)
+		if !ok || usedPrev {
+			t.Fatalf("expected current match: ok=%v usedPrev=%v", ok, usedPrev)
+		}
+		if string(matched) != string(curr) {
+			t.Fatalf("matched key mismatch")
+		}
+	})
+
+	t.Run("previous matches when current does not", func(t *testing.T) {
+		ks := auth.KeySet{Current: curr, Previous: prev}
+		matched, usedPrev, ok := ks.Verify(auth.SignHex(prev, msg), msg)
+		if !ok || !usedPrev {
+			t.Fatalf("expected previous match: ok=%v usedPrev=%v", ok, usedPrev)
+		}
+		if string(matched) != string(prev) {
+			t.Fatalf("matched key mismatch")
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		ks := auth.KeySet{Current: curr, Previous: prev}
+		other := []byte("othr-secret-16by")
+		matched, usedPrev, ok := ks.Verify(auth.SignHex(other, msg), msg)
+		if ok || usedPrev || matched != nil {
+			t.Fatalf("expected miss: matched=%v usedPrev=%v ok=%v", matched, usedPrev, ok)
+		}
+	})
+
+	t.Run("previous nil short-circuits", func(t *testing.T) {
+		ks := auth.KeySet{Current: curr}
+		// Current still matches.
+		if _, _, ok := ks.Verify(auth.SignHex(curr, msg), msg); !ok {
+			t.Fatalf("expected current match with nil previous")
+		}
+		// A sig made with a key that is not Current must not be accepted
+		// just because Previous happens to be unset.
+		other := []byte("othr-secret-16by")
+		if _, _, ok := ks.Verify(auth.SignHex(other, msg), msg); ok {
+			t.Fatalf("expected miss with nil previous")
+		}
+	})
+}

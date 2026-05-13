@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/db"
 	"github.com/njm2360/vrchat-ranking-system/internal/savedata"
 )
@@ -29,8 +28,12 @@ func (s *Server) handleSave(c echo.Context) error {
 	if sigHex == "" {
 		return c.String(http.StatusBadRequest, "missing sig")
 	}
-	if !auth.VerifyHex(s.cfg.SaveSecret, sigHex, []byte(dataStr), []byte(displayName)) {
+	_, usedPrev, ok := s.cfg.SaveKeys.Verify(sigHex, []byte(dataStr), []byte(displayName))
+	if !ok {
 		return c.String(http.StatusBadRequest, "invalid sig")
+	}
+	if usedPrev {
+		s.log.Warn("rotation: previous key accepted", "endpoint", "save", "display_name", displayName)
 	}
 
 	claims := claimsFromEcho(c)

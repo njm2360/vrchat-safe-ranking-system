@@ -28,7 +28,7 @@ func main() {
 	cfg, err := config.Load()
 	exitIf(err)
 
-	client := vrcclient.New(cfg.BaseURL, cfg.SaveSecret, cfg.LoadSecret, cfg.AuthSecret)
+	client := vrcclient.New(cfg.BaseURL, cfg.SaveKeys.Current, cfg.LoadKeys.Current, cfg.AuthKeys.Current)
 	ctx := context.Background()
 
 	switch sub {

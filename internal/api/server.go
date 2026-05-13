@@ -60,13 +60,13 @@ type IDGen interface {
 
 // Config carries the runtime parameters the handlers consult.
 type Config struct {
-	SaveSecret    []byte
-	LoadSecret    []byte
-	AuthSecret    []byte
-	OAuthStateTTL  time.Duration
-	SessionTTL     time.Duration
-	MockOAuth      bool
-	CookieSecure   bool
+	SaveKeys      auth.KeySet
+	LoadKeys      auth.KeySet
+	AuthKeys      auth.KeySet
+	OAuthStateTTL time.Duration
+	SessionTTL    time.Duration
+	MockOAuth     bool
+	CookieSecure  bool
 }
 
 type Server struct {

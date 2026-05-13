@@ -51,13 +51,13 @@ func main() {
 	}
 
 	apiCfg := api.Config{
-		SaveSecret:     cfg.SaveSecret,
-		LoadSecret:     cfg.LoadSecret,
-		AuthSecret:     cfg.AuthSecret,
-		OAuthStateTTL:  cfg.OAuthStateTTL,
-		SessionTTL:     cfg.SessionTTL,
-		MockOAuth:      cfg.OAuthMode == config.OAuthModeMock,
-		CookieSecure:   strings.HasPrefix(cfg.BaseURL, "https://"),
+		SaveKeys:      cfg.SaveKeys,
+		LoadKeys:      cfg.LoadKeys,
+		AuthKeys:      cfg.AuthKeys,
+		OAuthStateTTL: cfg.OAuthStateTTL,
+		SessionTTL:    cfg.SessionTTL,
+		MockOAuth:     cfg.OAuthMode == config.OAuthModeMock,
+		CookieSecure:  strings.HasPrefix(cfg.BaseURL, "https://"),
 	}
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,

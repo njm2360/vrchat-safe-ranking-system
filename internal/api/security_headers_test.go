@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/njm2360/vrchat-ranking-system/internal/api"
+	"github.com/njm2360/vrchat-ranking-system/internal/auth"
 	"github.com/njm2360/vrchat-ranking-system/internal/oauth"
 )
 
@@ -28,9 +29,9 @@ func TestSecurityHeaders_BaselineOnEveryResponse(t *testing.T) {
 
 func TestSecurityHeaders_HSTSGatedOnHTTPS(t *testing.T) {
 	cfg := api.Config{
-		SaveSecret:    testSaveSecret,
-		LoadSecret:    testLoadSecret,
-		AuthSecret:    testAuthSecret,
+		SaveKeys:      auth.KeySet{Current: testSaveSecret},
+		LoadKeys:      auth.KeySet{Current: testLoadSecret},
+		AuthKeys:      auth.KeySet{Current: testAuthSecret},
 		OAuthStateTTL: 5 * time.Minute,
 		SessionTTL:    15 * time.Minute,
 	}

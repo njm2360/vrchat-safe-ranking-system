@@ -49,6 +49,14 @@ type harness struct {
 }
 
 func newHarness(t *testing.T) *harness {
+	return newHarnessKeys(t, api.Config{
+		SaveKeys: auth.KeySet{Current: []byte(saveSecret)},
+		LoadKeys: auth.KeySet{Current: []byte(loadSecret)},
+		AuthKeys: auth.KeySet{Current: []byte(authSecret)},
+	}, []byte(saveSecret), []byte(loadSecret), []byte(authSecret))
+}
+
+func newHarnessKeys(t *testing.T, keys api.Config, clientSave, clientLoad, clientAuth []byte) *harness {
 	t.Helper()
 	fc := clock.NewFake(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
 	ig := idgen.NewSequential("id")
@@ -65,9 +73,9 @@ func newHarness(t *testing.T) *harness {
 	provider := oauth.NewFake("placeholder", "default-code", "default-discord")
 
 	apiCfg := api.Config{
-		SaveSecret:    []byte(saveSecret),
-		LoadSecret:    []byte(loadSecret),
-		AuthSecret:    []byte(authSecret),
+		SaveKeys:      keys.SaveKeys,
+		LoadKeys:      keys.LoadKeys,
+		AuthKeys:      keys.AuthKeys,
 		OAuthStateTTL: 5 * time.Minute,
 		SessionTTL:    15 * time.Minute,
 	}
@@ -76,7 +84,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(srv.Close)
 	provider.CallbackURL = srv.URL + "/auth/callback"
 
-	client := vrcclient.New(srv.URL, []byte(saveSecret), []byte(loadSecret), []byte(authSecret))
+	client := vrcclient.New(srv.URL, clientSave, clientLoad, clientAuth)
 
 	return &harness{
 		t: t, clock: fc, idgen: ig, db: d, issuer: issuer, regSvc: regSvc,
@@ -306,6 +314,46 @@ func TestE2E_LoadWithoutJWT_Rejected_ForRegisteredUser(t *testing.T) {
 	_, err := h.client.Load(context.Background(), vrcclient.LoadParams{DisplayName: "alice"})
 	if err == nil {
 		t.Fatal("expected error for registered user load without jwt, got nil")
+	}
+}
+
+// During a rotation window a not-yet-updated Udon client (still holding the
+// previous keys) must complete the full register → save → load flow against
+// a server whose Current keys have already been rolled forward.
+func TestE2E_RotationPreviousKeyAccepted(t *testing.T) {
+	newSave := []byte("e2e-save-new-16b")
+	newLoad := []byte("e2e-load-new-16b")
+	newAuth := []byte("e2e-auth-new-16b")
+
+	h := newHarnessKeys(t, api.Config{
+		SaveKeys: auth.KeySet{Current: newSave, Previous: []byte(saveSecret)},
+		LoadKeys: auth.KeySet{Current: newLoad, Previous: []byte(loadSecret)},
+		AuthKeys: auth.KeySet{Current: newAuth, Previous: []byte(authSecret)},
+	}, []byte(saveSecret), []byte(loadSecret), []byte(authSecret))
+
+	jwt := h.register("discord-1", "alice")
+
+	body, err := h.client.Save(context.Background(), vrcclient.SaveParams{
+		Data:        &savedata.Data{Score: 1234, GeneratedAt: time.Now().Add(-time.Minute).UTC()},
+		JWT:         jwt,
+		DisplayName: "alice",
+	})
+	if err != nil {
+		t.Fatalf("Save with previous key: %v", err)
+	}
+	if body != "success" {
+		t.Errorf("save body = %q, want 'success'", body)
+	}
+
+	// vrcclient.Load verifies the response sig against its own (previous)
+	// LoadSecret — this asserts the server echoed the previous key when
+	// signing the response, not the new Current key.
+	loaded, err := h.client.Load(context.Background(), vrcclient.LoadParams{JWT: jwt, DisplayName: "alice"})
+	if err != nil {
+		t.Fatalf("Load with previous key: %v", err)
+	}
+	if loaded == nil || loaded.Score != 1234 {
+		t.Errorf("loaded = %+v, want Score=1234", loaded)
 	}
 }
 
