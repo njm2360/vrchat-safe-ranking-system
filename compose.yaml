@@ -1,0 +1,9 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8500:8500"
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+    restart: unless-stopped
